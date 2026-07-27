@@ -1,0 +1,1171 @@
+/* ============================================================================
+   Ars Fodina — design system
+   "The art of the mine." Every surface is a block face: hard bevelled edges,
+   square corners, flat colour. No gradients anywhere, by design — pixel art and
+   woodcut plates are both hard-edge, limited-palette media, and the UI matches.
+   ============================================================================ */
+
+@font-face {
+  font-family: 'Pixelify Sans';
+  src: url('../assets/fonts/pixelify.woff2') format('woff2');
+  font-weight: 400 700;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('../assets/fonts/inter.woff2') format('woff2');
+  font-weight: 400 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../assets/fonts/jbmono.woff2') format('woff2');
+  font-weight: 400 500;
+  font-display: swap;
+}
+
+:root {
+  /* ── Strata: the shared stone the whole app is cut from ─────────────────── */
+  --bedrock: #16171b;
+  --stone: #222429;
+  --slab: #2c2f35;
+  --lode: #383b43;
+  --rule: #0e0f12;
+
+  /* Bevel edges — the signature. Light top/left, dark bottom/right, no blur. */
+  --edge-light: rgba(255, 255, 255, 0.14);
+  --edge-dark: rgba(0, 0, 0, 0.48);
+
+  /* Candlelit parchment, not cold blue-white */
+  --text: #e9e4d8;
+  --dim: #b0a99a;
+  --muted: #7e776b;
+  --faint: #5a554c;
+
+  /* Semantic — drawn from ore, not from a UI kit */
+  --gold: #f0b429;
+  --danger: #d64541;
+  --ok: #56b948;
+
+  /* Overridden per theme */
+  --vein: #4fc24f;
+  --vein-2: #f0b429;
+  --vein-ink: #0d1a0d;
+  --banner: url('../assets/pixel/banner-terra.png');
+
+  --font-display: 'Pixelify Sans', 'Courier New', monospace;
+  --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', monospace;
+
+  --rail: 74px;
+  --titlebar: 40px;
+  --dock: 58px;
+  --bevel: 3px;
+}
+
+/* ── Themes ────────────────────────────────────────────────────────────────
+   Each theme is a biome: an ore vein colour plus its banner plate.          */
+[data-theme='terra'] {
+  --vein: #4fc24f;
+  --vein-2: #f0b429;
+  --vein-ink: #0d1a0d;
+  --banner: url('../assets/pixel/banner-terra.png');
+}
+[data-theme='infernum'] {
+  --vein: #f0741e;
+  --vein-2: #d63a2f;
+  --vein-ink: #1a0a03;
+  --banner: url('../assets/pixel/banner-infernum.png');
+  --bedrock: #1a1315;
+  --stone: #261c1e;
+  --slab: #322427;
+  --lode: #3f2e31;
+}
+[data-theme='finis'] {
+  --vein: #b77bd6;
+  --vein-2: #e5e1aa;
+  --vein-ink: #150a1a;
+  --banner: url('../assets/pixel/banner-finis.png');
+  --bedrock: #16131d;
+  --stone: #221e2b;
+  --slab: #2c2736;
+  --lode: #383144;
+}
+[data-theme='tenebrae'] {
+  --vein: #21c7c0;
+  --vein-2: #5a7fb0;
+  --vein-ink: #04191a;
+  --banner: url('../assets/pixel/banner-tenebrae.png');
+  --bedrock: #10161a;
+  --stone: #1b2429;
+  --slab: #242f35;
+  --lode: #2f3c43;
+}
+[data-theme='glacies'] {
+  --vein: #6fd0ee;
+  --vein-2: #dbeaf5;
+  --vein-ink: #04171f;
+  --banner: url('../assets/pixel/banner-glacies.png');
+  --bedrock: #14181d;
+  --stone: #1f242b;
+  --slab: #293038;
+  --lode: #353e47;
+}
+/* Lux — the Minecraft inventory panel, in daylight. */
+[data-theme='lux'] {
+  --bedrock: #8e8e8e;
+  --stone: #c6c6c6;
+  --slab: #d4d4d4;
+  --lode: #e3e3e3;
+  --rule: #565656;
+  --edge-light: rgba(255, 255, 255, 0.85);
+  --edge-dark: rgba(0, 0, 0, 0.32);
+  --text: #22201c;
+  --dim: #3f3b34;
+  --muted: #5d584f;
+  --faint: #7d776c;
+  --vein: #3b8c3b;
+  --vein-2: #b07d15;
+  --vein-ink: #f2f7f2;
+  --banner: url('../assets/pixel/banner-terra.png');
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: var(--bedrock);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.55;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* Every generated sprite renders on its true pixel grid, never smoothed. */
+img.pixel,
+.pixel {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+}
+
+a {
+  color: var(--vein);
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--vein);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bedrock);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--slab);
+  box-shadow: inset 2px 2px 0 var(--edge-light), inset -2px -2px 0 var(--edge-dark);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--lode);
+}
+
+/* ── The bevel: one utility, used everywhere ───────────────────────────────*/
+.bevel {
+  box-shadow: inset var(--bevel) var(--bevel) 0 var(--edge-light),
+    inset calc(var(--bevel) * -1) calc(var(--bevel) * -1) 0 var(--edge-dark);
+}
+.bevel-in {
+  box-shadow: inset var(--bevel) var(--bevel) 0 var(--edge-dark),
+    inset calc(var(--bevel) * -1) calc(var(--bevel) * -1) 0 var(--edge-light);
+}
+
+/* A stratum: the hard rule that separates layers of rock. */
+.strata {
+  height: 3px;
+  background: var(--rule);
+  box-shadow: inset 0 1px 0 var(--edge-light);
+}
+
+/* ── App shell ─────────────────────────────────────────────────────────────*/
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-rows: var(--titlebar) 1fr;
+  position: relative;
+  isolation: isolate;
+}
+
+.body-grid {
+  display: grid;
+  grid-template-columns: var(--rail) 1fr;
+  min-height: 0;
+  position: relative;
+}
+
+.content {
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: calc(var(--dock) + 8px);
+}
+
+/* ── Background: the biome plate, held as a hard band ──────────────────────*/
+.world-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: var(--bedrock);
+  overflow: hidden;
+}
+/* The plate is scaled to an exact 2x of its 160x90 grid and tiled sideways, so
+   every pixel stays square and the scene reads at a glance. */
+.world-plate {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 180px;
+  background-image: var(--banner);
+  background-size: 320px 180px;
+  background-repeat: repeat-x;
+  background-position: center top;
+  image-rendering: pixelated;
+  opacity: 0.22;
+}
+/* Hard edge instead of a fade — a seam of bedrock, not a gradient. */
+.world-plate::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--rule);
+}
+
+/* ── Title bar ─────────────────────────────────────────────────────────────*/
+.titlebar {
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px 0 14px;
+  background: var(--stone);
+  box-shadow: inset 0 var(--bevel) 0 var(--edge-light), inset 0 -3px 0 var(--rule);
+  z-index: 20;
+}
+.titlebar .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+.titlebar .brand small {
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+.titlebar .spacer {
+  flex: 1;
+}
+.win-controls {
+  -webkit-app-region: no-drag;
+  display: flex;
+  gap: 3px;
+}
+.win-btn {
+  width: 34px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+  background: var(--slab);
+  box-shadow: inset 2px 2px 0 var(--edge-light), inset -2px -2px 0 var(--edge-dark);
+}
+.win-btn:hover {
+  background: var(--lode);
+  color: var(--text);
+}
+.win-btn:active {
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+}
+.win-btn.close:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* ── Sidebar rail ──────────────────────────────────────────────────────────*/
+.rail {
+  -webkit-app-region: no-drag;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 0;
+  background: var(--stone);
+  box-shadow: inset -3px 0 0 var(--rule), inset 3px 0 0 var(--edge-light);
+  z-index: 10;
+}
+.rail-item {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: transparent;
+}
+.rail-item:hover {
+  color: var(--text);
+  background: var(--slab);
+  box-shadow: inset 2px 2px 0 var(--edge-light), inset -2px -2px 0 var(--edge-dark);
+}
+.rail-item.active {
+  color: var(--text);
+  background: var(--lode);
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+}
+/* The vein: a solid ore seam marking the active layer. */
+.rail-item.active::before {
+  content: '';
+  position: absolute;
+  left: -14px;
+  top: 8px;
+  bottom: 8px;
+  width: 4px;
+  background: var(--vein);
+}
+.rail-item .tip {
+  position: absolute;
+  left: 56px;
+  white-space: nowrap;
+  background: var(--lode);
+  padding: 5px 9px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 40;
+  box-shadow: inset 2px 2px 0 var(--edge-light), inset -2px -2px 0 var(--edge-dark);
+}
+.rail-item:hover .tip {
+  opacity: 1;
+}
+.rail-spacer {
+  flex: 1;
+}
+.rail-avatar {
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: inset 2px 2px 0 var(--edge-light), inset -2px -2px 0 var(--edge-dark);
+}
+
+/* ── Page layout ───────────────────────────────────────────────────────────*/
+.page {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 26px 30px 40px;
+}
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 3px solid var(--rule);
+}
+/* Latin eyebrow — the plate label in a mining treatise. */
+.eyebrow {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--vein);
+  margin-bottom: 6px;
+}
+.page-title {
+  font-size: 32px;
+}
+/* Kept for existing markup — a solid ore colour, never a gradient. */
+.gradient-text,
+.vein-text {
+  color: var(--vein);
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────────*/
+.btn {
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 16px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  background: var(--slab);
+  box-shadow: inset var(--bevel) var(--bevel) 0 var(--edge-light),
+    inset calc(var(--bevel) * -1) calc(var(--bevel) * -1) 0 var(--edge-dark);
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) {
+  background: var(--lode);
+}
+.btn:active:not(:disabled) {
+  box-shadow: inset var(--bevel) var(--bevel) 0 var(--edge-dark),
+    inset calc(var(--bevel) * -1) calc(var(--bevel) * -1) 0 var(--edge-light);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn.ghost {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--lode);
+}
+.btn.ghost:hover:not(:disabled) {
+  background: var(--slab);
+}
+.btn.danger {
+  color: #fff;
+  background: var(--danger);
+}
+.btn.danger:hover:not(:disabled) {
+  background: #e2564f;
+}
+.btn.primary {
+  color: var(--vein-ink);
+  background: var(--vein);
+}
+.btn.primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+.btn.sm {
+  height: 30px;
+  padding: 0 11px;
+  font-size: 12.5px;
+  --bevel: 2px;
+}
+.btn.icon {
+  width: 38px;
+  padding: 0;
+}
+
+.btn-play {
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 30px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--vein-ink);
+  background: var(--vein);
+  box-shadow: inset 4px 4px 0 rgba(255, 255, 255, 0.3), inset -4px -4px 0 rgba(0, 0, 0, 0.35);
+}
+.btn-play:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+.btn-play:active:not(:disabled) {
+  box-shadow: inset 4px 4px 0 rgba(0, 0, 0, 0.35), inset -4px -4px 0 rgba(255, 255, 255, 0.3);
+}
+.btn-play:disabled {
+  background: var(--lode);
+  color: var(--muted);
+  box-shadow: inset 4px 4px 0 var(--edge-light), inset -4px -4px 0 var(--edge-dark);
+  cursor: not-allowed;
+}
+
+/* ── Panels ────────────────────────────────────────────────────────────────*/
+.panel {
+  background: var(--stone);
+  box-shadow: inset var(--bevel) var(--bevel) 0 var(--edge-light),
+    inset calc(var(--bevel) * -1) calc(var(--bevel) * -1) 0 var(--edge-dark);
+}
+.glass {
+  background: var(--stone);
+  box-shadow: inset var(--bevel) var(--bevel) 0 var(--edge-light),
+    inset calc(var(--bevel) * -1) calc(var(--bevel) * -1) 0 var(--edge-dark);
+}
+/* An inventory slot: recessed, for thumbnails and icons. */
+.slot {
+  background: var(--bedrock);
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.grid-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
+  gap: 14px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.03em;
+  background: var(--bedrock);
+  color: var(--dim);
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+}
+.chip.accent {
+  color: var(--vein);
+}
+.chip.warn {
+  color: var(--gold);
+}
+
+/* ── Forms ─────────────────────────────────────────────────────────────────*/
+.field {
+  margin-bottom: 18px;
+}
+.field > label {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 7px;
+}
+.field .hint {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 6px;
+}
+.input,
+.select,
+textarea.input {
+  -webkit-app-region: no-drag;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  background: var(--bedrock);
+  border: none;
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  user-select: text;
+}
+.select {
+  cursor: pointer;
+}
+textarea.input {
+  height: auto;
+  padding: 10px 12px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.input:focus,
+.select:focus,
+textarea.input:focus {
+  outline: none;
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light),
+    inset 0 0 0 2px var(--vein);
+}
+.input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.slider {
+  -webkit-app-region: no-drag;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 14px;
+  background: var(--bedrock);
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+  outline: none;
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 26px;
+  background: var(--vein);
+  box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.35), inset -2px -2px 0 rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+
+.toggle {
+  -webkit-app-region: no-drag;
+  width: 52px;
+  height: 26px;
+  background: var(--bedrock);
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+  position: relative;
+  flex-shrink: 0;
+}
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 20px;
+  background: var(--lode);
+  box-shadow: inset 2px 2px 0 var(--edge-light), inset -2px -2px 0 var(--edge-dark);
+  transition: transform 0.08s steps(3);
+}
+.toggle.on::after {
+  transform: translateX(24px);
+  background: var(--vein);
+}
+
+/* ── Progress dock ─────────────────────────────────────────────────────────*/
+.dock {
+  position: absolute;
+  left: var(--rail);
+  right: 0;
+  bottom: 0;
+  height: var(--dock);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 18px;
+  background: var(--stone);
+  box-shadow: inset 0 3px 0 var(--rule), inset 0 -3px 0 var(--edge-dark);
+  z-index: 15;
+}
+/* An XP bar: chunky, stepped, unmistakably a game meter. */
+.dock-bar {
+  flex: 1;
+  height: 16px;
+  background: var(--bedrock);
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+  overflow: hidden;
+}
+.dock-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--vein);
+  transition: width 0.2s steps(8);
+}
+.dock-bar.indeterminate > span {
+  width: 32% !important;
+  animation: creep 1.4s steps(12) infinite;
+}
+@keyframes creep {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(420%);
+  }
+}
+
+/* ── Log console ───────────────────────────────────────────────────────────*/
+.console {
+  position: absolute;
+  left: var(--rail);
+  right: 0;
+  bottom: var(--dock);
+  height: 46vh;
+  background: var(--bedrock);
+  box-shadow: inset 0 3px 0 var(--rule);
+  display: flex;
+  flex-direction: column;
+  z-index: 14;
+}
+.console-lines {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  user-select: text;
+}
+.console-lines .l-stderr {
+  color: #f08b86;
+}
+.console-lines .l-system {
+  color: var(--vein);
+}
+.console-lines .l-stdout {
+  color: var(--dim);
+}
+
+/* ── Modal / drawer ────────────────────────────────────────────────────────*/
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 7, 9, 0.72);
+  z-index: 50;
+  display: grid;
+  place-items: center;
+}
+.modal {
+  width: min(560px, 92vw);
+  max-height: 86vh;
+  overflow-y: auto;
+  background: var(--stone);
+  box-shadow: inset 4px 4px 0 var(--edge-light), inset -4px -4px 0 var(--edge-dark);
+  padding: 24px;
+}
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(560px, 94vw);
+  background: var(--stone);
+  box-shadow: inset 4px 0 0 var(--edge-light), inset -4px 0 0 var(--edge-dark);
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Misc ──────────────────────────────────────────────────────────────────*/
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.muted {
+  color: var(--muted);
+}
+.dim {
+  color: var(--dim);
+}
+.spin {
+  animation: spin 1s steps(8) infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.skeleton {
+  background: var(--stone);
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+  animation: pulse 1.2s steps(2) infinite alternate;
+}
+@keyframes pulse {
+  to {
+    opacity: 0.55;
+  }
+}
+
+.toast-wrap {
+  position: fixed;
+  bottom: calc(var(--dock) + 16px);
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 80;
+}
+.toast {
+  min-width: 260px;
+  max-width: 380px;
+  padding: 12px 14px;
+  background: var(--slab);
+  box-shadow: inset 3px 3px 0 var(--edge-light), inset -3px -3px 0 var(--edge-dark);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.toast.error {
+  background: var(--danger);
+  color: #fff;
+}
+.toast.success {
+  color: var(--text);
+  box-shadow: inset 3px 3px 0 var(--edge-light), inset -3px -3px 0 var(--edge-dark),
+    inset 0 0 0 2px var(--vein);
+}
+
+/* Content laid over a darkened art plate always reads light, whatever the
+   theme — the plate is dark in every biome, including the daylight one. */
+.on-plate {
+  color: #f2ede3;
+}
+.on-plate .dim {
+  color: #d9d3c7;
+}
+.on-plate .muted {
+  color: #b3aca0;
+}
+.on-plate .chip {
+  background: rgba(0, 0, 0, 0.55);
+  color: #f2ede3;
+  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.5), inset -2px -2px 0 rgba(255, 255, 255, 0.16);
+}
+.on-plate .chip.accent {
+  color: var(--vein);
+}
+
+/* The hero of an instance with no artwork falls back to its biome plate. */
+.hero-plate {
+  background-image: var(--banner);
+  background-size: 320px 180px;
+  background-repeat: repeat-x;
+  background-position: center top;
+  image-rendering: pixelated;
+}
+
+/* ── Theme picker ──────────────────────────────────────────────────────────
+   Each card previews itself: data-theme rescopes the tokens so the swatch and
+   its accent bar are painted in the theme they select.                       */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+.theme-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  gap: 0 10px;
+  align-items: center;
+  padding: 10px;
+  text-align: left;
+  background: var(--stone);
+  color: var(--text);
+  box-shadow: inset 2px 2px 0 var(--edge-light), inset -2px -2px 0 var(--edge-dark);
+}
+.theme-card:hover {
+  background: var(--slab);
+}
+.theme-card.active {
+  box-shadow: inset 2px 2px 0 var(--edge-light), inset -2px -2px 0 var(--edge-dark),
+    inset 0 0 0 3px var(--vein);
+}
+.theme-swatch {
+  grid-row: span 2;
+  width: 44px;
+  height: 44px;
+}
+.theme-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  align-self: end;
+}
+.theme-latin {
+  font-size: 11px;
+  color: var(--vein);
+  letter-spacing: 0.06em;
+  align-self: start;
+}
+
+.style-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.style-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 82px;
+  padding: 12px;
+  text-align: left;
+  background: var(--stone);
+  box-shadow: inset 0 0 0 2px var(--lode);
+}
+.style-card:hover {
+  background: var(--slab);
+}
+.style-card.active {
+  box-shadow: inset 0 0 0 3px var(--vein);
+}
+.style-card strong,
+.style-card small {
+  display: block;
+}
+.style-card strong {
+  font-family: var(--font-display);
+  font-size: 15px;
+}
+.style-card small {
+  margin-top: 3px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+.style-preview {
+  flex: 0 0 72px;
+  height: 48px;
+  padding: 7px;
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  grid-template-rows: 9px 1fr;
+  gap: 5px;
+  background: var(--bedrock);
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+}
+.style-preview i {
+  display: block;
+  background: var(--vein);
+}
+.style-preview i:first-child {
+  grid-row: span 2;
+}
+.style-preview i:last-child {
+  background: var(--slab);
+}
+.style-preview.modern,
+.style-preview.modern i {
+  border-radius: 6px;
+}
+
+.mod-list {
+  max-height: 390px;
+  overflow: hidden;
+  overflow-y: auto;
+}
+.drawer-nav {
+  position: sticky;
+  top: -24px;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin: -24px -24px 20px;
+  padding: 10px 24px;
+  background: var(--stone);
+  border-bottom: 3px solid var(--rule);
+}
+.drawer-nav button {
+  min-height: 32px;
+  padding: 0 8px;
+  font-family: var(--font-display);
+  color: var(--muted);
+}
+.drawer-nav button:hover {
+  color: var(--text);
+  background: var(--slab);
+}
+.drawer-anchor {
+  scroll-margin-top: 68px;
+}
+.mod-search {
+  margin-bottom: 10px;
+}
+.mod-results {
+  max-height: 310px;
+  margin-top: 8px;
+  overflow-y: auto;
+}
+.mod-result {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 58px;
+  padding: 8px;
+  border-bottom: 2px solid var(--rule);
+}
+.mod-result:last-child {
+  border-bottom: 0;
+}
+.mod-result > img,
+.mod-result > .slot {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  object-fit: cover;
+}
+.mod-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--rule);
+}
+.mod-row:last-child {
+  border-bottom: 0;
+}
+.mod-row.disabled {
+  opacity: 0.55;
+}
+.mod-power {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: var(--bedrock);
+}
+.mod-power.on {
+  color: var(--vein);
+}
+.mod-info {
+  min-width: 0;
+  flex: 1;
+}
+.mod-info strong,
+.mod-info small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mod-info strong {
+  font-size: 12.5px;
+  text-transform: capitalize;
+}
+.mod-info small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.mod-result .mod-info small {
+  max-width: 245px;
+}
+
+/* Modern keeps the biome palette while replacing the inventory bevels with
+   quieter depth and friendlier shapes. Classic remains the original pixel UI. */
+[data-ui-style='modern'] {
+  --bevel: 1px;
+}
+[data-ui-style='modern'] .panel,
+[data-ui-style='modern'] .glass,
+[data-ui-style='modern'] .modal,
+[data-ui-style='modern'] .theme-card,
+[data-ui-style='modern'] .style-card {
+  border: 1px solid var(--lode);
+  border-radius: 14px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
+}
+[data-ui-style='modern'] .btn,
+[data-ui-style='modern'] .btn-play,
+[data-ui-style='modern'] .input,
+[data-ui-style='modern'] .select,
+[data-ui-style='modern'] .toggle,
+[data-ui-style='modern'] .chip,
+[data-ui-style='modern'] .slot,
+[data-ui-style='modern'] .rail-item,
+[data-ui-style='modern'] .rail-avatar {
+  border-radius: 9px;
+}
+[data-ui-style='modern'] .btn {
+  box-shadow: inset 0 0 0 1px var(--lode), 0 2px 8px rgba(0, 0, 0, 0.16);
+}
+[data-ui-style='modern'] .btn.primary,
+[data-ui-style='modern'] .btn-play {
+  box-shadow: 0 5px 18px color-mix(in srgb, var(--vein) 28%, transparent);
+}
+[data-ui-style='modern'] .btn:active:not(:disabled),
+[data-ui-style='modern'] .btn-play:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+[data-ui-style='modern'] .theme-card.active,
+[data-ui-style='modern'] .style-card.active {
+  border-color: var(--vein);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--vein) 35%, transparent);
+}
+[data-ui-style='modern'] .world-plate {
+  opacity: 0.15;
+}
+
+@media (max-width: 720px) {
+  .style-picker {
+    grid-template-columns: 1fr;
+  }
+}
+
+.empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--muted);
+}
+.empty img {
+  image-rendering: pixelated;
+  margin-bottom: 16px;
+}
+.empty svg {
+  opacity: 0.4;
+  margin-bottom: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Buttons carry their own colour, so re-assert the light plate treatment. */
+.on-plate .btn.ghost {
+  color: #f2ede3;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.4);
+}
+.on-plate .btn.ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
