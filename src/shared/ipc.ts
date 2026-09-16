@@ -11,6 +11,7 @@ import type {
   LogLine,
   ProgressEvent,
   Settings,
+  SystemInfo,
   VersionSummary
 } from './types'
 
@@ -42,10 +43,11 @@ export interface LaunchResult {
   error?: string
 }
 
-/** The full surface exposed to the renderer as `window.arsFodina`. */
-export interface ArsFodinaApi {
+/** The full surface exposed to the renderer as `window.openforge`. */
+export interface OpenforgeApi {
   getSettings(): Promise<Settings>
   saveSettings(patch: Partial<Settings>): Promise<Settings>
+  getSystemInfo(): Promise<SystemInfo>
   getAccount(): Promise<Account>
   saveAccount(username: string): Promise<Account>
   discoverJava(): Promise<JavaInfo[]>
@@ -89,6 +91,7 @@ export interface ArsFodinaApi {
 export const IPC = {
   getSettings: 'settings:get',
   saveSettings: 'settings:save',
+  getSystemInfo: 'system:getInfo',
   getAccount: 'account:get',
   saveAccount: 'account:save',
   discoverJava: 'java:discover',

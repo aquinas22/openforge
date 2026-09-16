@@ -3,7 +3,9 @@ import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { IPC } from '@shared/ipc'
 import { registerIpc } from './ipc'
-import { migrateLegacyUserData } from './core/migrate'
+import { migrateLegacyUserData, removeLegacyAuthCredential } from './core/migrate'
+
+app.setName('Openforge')
 
 let mainWindow: BrowserWindow | null = null
 
@@ -19,7 +21,7 @@ function createWindow(): void {
     show: false,
     frame: false,
     backgroundColor: '#191a1f',
-    title: 'Ars Fodina',
+    title: 'Openforge',
     icon: existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : undefined,
     webPreferences: {
       // electron-vite emits the preload as .mjs because package.json is type:module
@@ -55,8 +57,10 @@ ipcMain.on(IPC.winMaximize, () => {
 ipcMain.on(IPC.winClose, () => mainWindow?.close())
 
 app.whenReady().then(() => {
+  app.setAppUserModelId('com.noahroe.openforge')
   // Must run before registerIpc(), which immediately reads settings/instances.
-  migrateLegacyUserData((msg) => console.log('[ArsFodina]', msg))
+  migrateLegacyUserData((msg) => console.log('[Openforge]', msg))
+  removeLegacyAuthCredential((msg) => console.log('[Openforge]', msg))
   registerIpc(() => mainWindow)
   createWindow()
 

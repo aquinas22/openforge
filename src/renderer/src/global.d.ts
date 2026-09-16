@@ -1,8 +1,8 @@
-import type { ArsFodinaApi } from '@shared/ipc'
+import type { OpenforgeApi } from '@shared/ipc'
 
 declare global {
   interface Window {
-    arsFodina: ArsFodinaApi
+    openforge: OpenforgeApi
   }
 }
 

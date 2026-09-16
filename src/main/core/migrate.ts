@@ -4,16 +4,11 @@ import { cpSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 /**
- * One-time migration from the launcher's previous identity ("Aurora Launcher").
- *
- * Electron derives `userData` from the app name, so renaming the product moves
- * the config directory — which would orphan settings.json, instances.json and,
- * far worse, the default game directory (`<userData>/minecraft`) holding assets,
- * libraries and every instance world. This moves the old tree into place and
- * rewrites the stored absolute `gameDir` so nothing has to be re-downloaded.
+ * Product renames move Electron's userData directory. Keep every known former
+ * identity here so an Openforge install can adopt settings, instances, worlds,
+ * libraries, and assets without forcing a reinstall.
  */
-
-const LEGACY_DIR_NAME = 'aurora-launcher'
+const LEGACY_DIR_NAMES = ['Ars Fodina', 'ars-fodina', 'aurora-launcher']
 const MARKER = 'settings.json'
 
 function moveInto(from: string, to: string): void {
@@ -56,21 +51,32 @@ function rewriteGameDir(settingsPath: string, legacyRoot: string, newRoot: strin
  */
 export function migrateLegacyUserData(log: (msg: string) => void = () => {}): void {
   const newRoot = app.getPath('userData')
-  const legacyRoot = join(app.getPath('appData'), LEGACY_DIR_NAME)
-
-  if (legacyRoot === newRoot) return
-  if (!existsSync(legacyRoot)) return
-  // Electron may have already created an empty userData dir, so key the check on
-  // the marker file rather than directory existence.
   if (existsSync(join(newRoot, MARKER))) return
-  if (!existsSync(join(legacyRoot, MARKER))) return
 
+  for (const directoryName of LEGACY_DIR_NAMES) {
+    const legacyRoot = join(app.getPath('appData'), directoryName)
+    if (legacyRoot === newRoot || !existsSync(join(legacyRoot, MARKER))) continue
+
+    try {
+      log(`Migrating launcher data from ${legacyRoot}`)
+      moveInto(legacyRoot, newRoot)
+      rewriteGameDir(join(newRoot, MARKER), legacyRoot, newRoot)
+      log(`Migration complete — data now lives in ${newRoot}`)
+    } catch (err) {
+      log(`Migration failed (${(err as Error).message}); existing data left untouched.`)
+    }
+    return
+  }
+}
+
+/** Remove credentials created by the retired direct Microsoft auth flow. */
+export function removeLegacyAuthCredential(log: (msg: string) => void = () => {}): void {
+  const credential = join(app.getPath('userData'), 'microsoft-auth.json')
+  if (!existsSync(credential)) return
   try {
-    log(`Migrating launcher data from ${legacyRoot}`)
-    moveInto(legacyRoot, newRoot)
-    rewriteGameDir(join(newRoot, MARKER), legacyRoot, newRoot)
-    log(`Migration complete — data now lives in ${newRoot}`)
+    rmSync(credential, { force: true })
+    log('Removed legacy Microsoft authentication credential.')
   } catch (err) {
-    log(`Migration failed (${(err as Error).message}); existing data left untouched.`)
+    log(`Could not remove legacy authentication credential: ${(err as Error).message}`)
   }
 }

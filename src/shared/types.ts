@@ -40,17 +40,20 @@ export interface Instance {
   note?: string
 }
 
-export interface Account {
-  /** Offline display name. */
+export interface OfflineAccount {
+  /** Display name used for local and offline-mode play. */
   username: string
   /** Deterministic offline UUID derived from the username. */
   uuid: string
   type: 'offline'
 }
 
+export type Account = OfflineAccount
+
 /** Biome themes. Each swaps the ore-vein accent and the banner plate. */
 export type ThemeId = 'terra' | 'infernum' | 'finis' | 'tenebrae' | 'glacies' | 'lux'
 export type UiStyle = 'modern' | 'classic'
+export type LaunchMode = 'official' | 'offline'
 
 export interface Settings {
   gameDir: string
@@ -65,10 +68,19 @@ export interface Settings {
   cfProxyUrl: string
   /** Optional direct CurseForge API key, used only when no proxy is set. */
   cfApiKey: string
+  /** Official launcher owns online auth, or Openforge launches directly with an offline identity. */
+  launchMode: LaunchMode
   closeLauncherOnLaunch: boolean
   fullscreen: boolean
   resolutionWidth: number
   resolutionHeight: number
+}
+
+export interface SystemInfo {
+  /** Physical memory reported by the operating system, rounded down to MiB. */
+  totalMemoryMb: number
+  /** Conservative launcher allocation ceiling that leaves memory for the OS. */
+  maxRamMb: number
 }
 
 export interface JavaInfo {

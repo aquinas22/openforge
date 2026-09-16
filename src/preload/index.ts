@@ -1,11 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc'
-import type { ArsFodinaApi } from '../shared/ipc'
+import type { OpenforgeApi } from '../shared/ipc'
 import type { LogLine, ProgressEvent } from '../shared/types'
 
-const api: ArsFodinaApi = {
+const api: OpenforgeApi = {
   getSettings: () => ipcRenderer.invoke(IPC.getSettings),
   saveSettings: (patch) => ipcRenderer.invoke(IPC.saveSettings, patch),
+  getSystemInfo: () => ipcRenderer.invoke(IPC.getSystemInfo),
   getAccount: () => ipcRenderer.invoke(IPC.getAccount),
   saveAccount: (username) => ipcRenderer.invoke(IPC.saveAccount, username),
   discoverJava: () => ipcRenderer.invoke(IPC.discoverJava),
@@ -54,4 +55,4 @@ const api: ArsFodinaApi = {
   }
 }
 
-contextBridge.exposeInMainWorld('arsFodina', api)
+contextBridge.exposeInMainWorld('openforge', api)

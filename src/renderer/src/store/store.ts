@@ -7,6 +7,7 @@ import type {
   LogLine,
   ProgressEvent,
   Settings,
+  SystemInfo,
   VersionSummary
 } from '@shared/types'
 import type { CfInstallInput, CreateInstanceInput } from '@shared/ipc'
@@ -25,6 +26,7 @@ interface State {
   ready: boolean
   route: Route
   settings: Settings | null
+  systemInfo: SystemInfo | null
   account: Account | null
   instances: Instance[]
   java: JavaInfo[]
@@ -69,6 +71,7 @@ export const useStore = create<State>((set, get) => ({
   ready: false,
   route: 'library',
   settings: null,
+  systemInfo: null,
   account: null,
   instances: [],
   java: [],
@@ -116,13 +119,14 @@ export const useStore = create<State>((set, get) => ({
       })
     })
 
-    const [settings, account, instances, cfStatus] = await Promise.all([
+    const [settings, systemInfo, account, instances, cfStatus] = await Promise.all([
       api.getSettings(),
+      api.getSystemInfo(),
       api.getAccount(),
       api.listInstances(),
       api.cfStatus()
     ])
-    set({ settings, account, instances, cfStatus, ready: true })
+    set({ settings, systemInfo, account, instances, cfStatus, ready: true })
     get().refreshJava()
     api
       .listVersions()

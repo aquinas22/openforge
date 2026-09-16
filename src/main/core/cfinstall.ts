@@ -47,7 +47,7 @@ async function downloadPackZip(cf: CfClient, projectId: number, fileId: number, 
   const file = await cf.resolveFile(projectId, fileId)
   if (!file) throw new Error('Could not resolve the modpack file from CurseForge.')
   const url = await cf.resolveDownloadUrl(projectId, file)
-  const dest = join(tmpdir(), `arsfodina-pack-${projectId}-${fileId}.zip`)
+  const dest = join(tmpdir(), `openforge-pack-${projectId}-${fileId}.zip`)
   report('preparing', 'Downloading modpack', -1, file.fileName)
   await downloadFile({ url, dest })
   return dest
@@ -157,7 +157,7 @@ export async function installCurseForgeModpack(opts: {
   }
 
   await rm(zipPath, { force: true })
-  await writeFile(join(instanceDir, '.arsfodina-mods.json'), JSON.stringify({ mods: managed }, null, 2))
+  await writeFile(join(instanceDir, '.openforge-mods.json'), JSON.stringify({ mods: managed }, null, 2))
   report('mods', 'Mods & files ready', 1, `${tasks.length} mods`)
 
   return {

@@ -1,5 +1,5 @@
-appId: com.noahroe.arsfodina
-productName: Ars Fodina
+appId: com.noahroe.openforge
+productName: Openforge
 copyright: Copyright © 2026 Noah Roe
 directories:
   buildResources: build
@@ -30,7 +30,7 @@ nsis:
   allowElevation: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: Ars Fodina
+  shortcutName: Openforge
   installerIcon: build/icon.ico
   uninstallerIcon: build/icon.ico
   deleteAppDataOnUninstall: false

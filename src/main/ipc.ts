@@ -1,5 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { totalmem } from 'node:os'
 import { copyFile, mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { InstalledMod, Instance, LogLine, ProgressEvent } from '@shared/types'
@@ -14,7 +15,7 @@ import {
   saveSettings,
   saveUsername
 } from './core/store'
-import { makeOfflineAccount } from './core/auth'
+import { launchAccount, makeOfflineAccount } from './core/auth'
 import { discoverJava, selectJava } from './core/java'
 import { fetchVersionManifest } from './core/manifest'
 import { installVersion, prepareNatives, resolveVersion, Reporter } from './core/installer'
@@ -31,12 +32,25 @@ import {
   managedMods,
   updateManagedMods
 } from './core/modmanager'
+import { openOfficialLauncher, registerOfficialProfile } from './core/official-launcher'
 
 export function registerIpc(getWindow: () => BrowserWindow | null): void {
   let settings = loadSettings()
   let instances = loadInstances()
   let username = loadUsername()
   const running = new Map<string, RunningGame>()
+  const totalMemoryMb = Math.floor(totalmem() / 1024 / 1024)
+  // Keep at least 2 GiB and 25% of physical RAM available for the OS/launcher.
+  const maxRamMb = Math.max(
+    1024,
+    Math.floor(Math.min(totalMemoryMb - 2048, totalMemoryMb * 0.75) / 256) * 256
+  )
+  const clampRam = (value: number): number =>
+    Math.min(maxRamMb, Math.max(1024, Math.round(value / 256) * 256))
+  if (settings.ramMb !== clampRam(settings.ramMb)) {
+    settings.ramMb = clampRam(settings.ramMb)
+    saveSettings(settings)
+  }
 
   const paths = (): GamePaths => new GamePaths(settings.gameDir)
   const cfClient = (): CfClient => new CfClient(settings.cfProxyUrl, settings.cfApiKey)
@@ -167,8 +181,10 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
 
   // ── Settings / account ─────────────────────────────────────────────────────
   ipcMain.handle(IPC.getSettings, () => settings)
+  ipcMain.handle(IPC.getSystemInfo, () => ({ totalMemoryMb, maxRamMb }))
   ipcMain.handle(IPC.saveSettings, (_e, patch: Partial<typeof settings>) => {
     settings = { ...settings, ...patch }
+    settings.ramMb = clampRam(settings.ramMb)
     saveSettings(settings)
     return settings
   })
@@ -219,6 +235,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   })
   ipcMain.handle(IPC.updateInstance, (_e, id: string, patch: Partial<Instance>) => {
     const inst = findInstance(id)
+    if (typeof patch.ramMb === 'number') patch.ramMb = clampRam(patch.ramMb)
     Object.assign(inst, patch)
     persist()
     return inst
@@ -241,10 +258,23 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       const report = reporterFor(id)
       const p = paths()
       report('launching', 'Preparing launch', -1)
+      if (settings.launchMode === 'official') {
+        const versionId = inst.launchVersion ?? inst.mcVersion
+        report('launching', 'Syncing with Minecraft Launcher', -1)
+        await registerOfficialProfile(
+          p,
+          { ...inst, ramMb: clampRam(inst.ramMb ?? settings.ramMb) },
+          settings,
+          versionId
+        )
+        await openOfficialLauncher()
+        report('done', 'Minecraft Launcher opened', 1, `Choose “Openforge · ${inst.name}” and press Play.`)
+        return { ok: true }
+      }
       const version = await resolveVersion(p, inst.launchVersion ?? inst.mcVersion)
       report('natives', 'Checking LWJGL natives', -1)
       const nativeCount = await prepareNatives(p, version)
-      logFor(id, 'system', `[Ars Fodina] Verified ${nativeCount} loadable LWJGL native files for ${process.platform}/${process.arch}.`)
+      logFor(id, 'system', `[Openforge] Verified ${nativeCount} loadable LWJGL native files for ${process.platform}/${process.arch}.`)
 
       const requiredJava = version.javaVersion?.majorVersion ?? 8
       const java = await selectJava(requiredJava, settings.javaPath)
@@ -260,15 +290,16 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
         return { ok: false, error: msg }
       }
 
-      const account = makeOfflineAccount(username)
+      const account = launchAccount(makeOfflineAccount(username))
       const startedAt = Date.now()
+      const hideLauncher = settings.closeLauncherOnLaunch
       const game = await launchGame({
         paths: p,
         version,
         instanceDir: p.instanceDir(id),
         account,
         settings: { ...settings, javaPath: java.path },
-        ramMb: inst.ramMb ?? settings.ramMb,
+        ramMb: clampRam(inst.ramMb ?? settings.ramMb),
         onLog: (stream, line) => logFor(id, stream, line),
         onExit: (code) => {
           running.delete(id)
@@ -276,12 +307,17 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
           inst.totalPlaySeconds = (inst.totalPlaySeconds ?? 0) + played
           persist()
           report('done', code === 0 ? 'Game closed' : `Game exited (code ${code})`, 1)
+          if (hideLauncher) {
+            getWindow()?.show()
+            getWindow()?.focus()
+          }
         }
       })
       running.set(id, game)
       inst.lastPlayed = new Date().toISOString()
       persist()
       report('running', 'Game running', 1, `pid ${game.pid}`)
+      if (hideLauncher) getWindow()?.hide()
       return { ok: true }
     } catch (err) {
       reporterFor(id)('error', 'Launch failed', -1, (err as Error).message)

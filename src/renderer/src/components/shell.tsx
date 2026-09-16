@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Minus, Square, Terminal, X, Loader2, CircleStop } from 'lucide-react'
+import { Minus, Square, Terminal, X, Loader2, CircleStop, Plus } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { api } from '../api'
 import { useStore, type Route } from '../store/store'
@@ -10,8 +10,8 @@ export function TitleBar(): JSX.Element {
     <div className="titlebar">
       <div className="brand row">
         <Logo size={24} />
-        <span>Ars Fodina</span>
-        <small>Minecraft</small>
+        <span>Openforge</span>
+        <small>Minecraft launcher</small>
       </div>
       <div className="spacer" />
       <div className="win-controls">
@@ -36,12 +36,20 @@ const NAV: { key: Route; label: string; sprite: string }[] = [
   { key: 'settings', label: 'Settings', sprite: sprites.pickaxe }
 ]
 
-export function Rail({ onAccount }: { onAccount: () => void }): JSX.Element {
+const NAV_DETAIL: Record<Route, string> = {
+  library: 'Your instances',
+  discover: 'Find modpacks',
+  settings: 'Launcher setup'
+}
+
+export function Rail({ onAccount, onNew }: { onAccount: () => void; onNew: () => void }): JSX.Element {
   const route = useStore((s) => s.route)
   const setRoute = useStore((s) => s.setRoute)
   const account = useStore((s) => s.account)
+  const launchMode = useStore((s) => s.settings?.launchMode)
   return (
     <nav className="rail">
+      <div className="rail-section-label">Workspace</div>
       {NAV.map((n) => (
         <button
           key={n.key}
@@ -51,12 +59,34 @@ export function Rail({ onAccount }: { onAccount: () => void }): JSX.Element {
           aria-current={route === n.key ? 'page' : undefined}
         >
           <Sprite src={n.sprite} size={28} />
+          <span className="rail-copy">
+            <strong>{n.label}</strong>
+            <small>{NAV_DETAIL[n.key]}</small>
+          </span>
           <span className="tip">{n.label}</span>
         </button>
       ))}
+      <button className="rail-new" onClick={onNew}>
+        <span className="rail-new-icon">
+          <Plus size={17} />
+        </span>
+        <span className="rail-copy">
+          <strong>New instance</strong>
+          <small>Ctrl + N</small>
+        </span>
+      </button>
       <div className="rail-spacer" />
-      <button className="rail-avatar" onClick={onAccount} title={account?.username}>
-        <Avatar name={account?.username ?? 'Player'} size={40} />
+      <button className="rail-account" onClick={onAccount} title="Manage accounts">
+        <span className="rail-avatar">
+          <Avatar name={account?.username ?? 'Player'} size={40} />
+        </span>
+        <span className="rail-copy">
+          <strong>{account?.username ?? 'Player'}</strong>
+          <small>
+            <i className={`status-dot${launchMode === 'official' ? '' : ' offline'}`} />{' '}
+            {launchMode === 'official' ? 'Official online' : 'Offline profile'}
+          </small>
+        </span>
       </button>
     </nav>
   )

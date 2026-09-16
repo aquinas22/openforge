@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-Write-Host "`nArs Fodina Windows Builder" -ForegroundColor Green
+Write-Host "`nOpenforge Windows Builder" -ForegroundColor Green
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   throw "Node.js was not found. Install Node.js 20 LTS or newer from https://nodejs.org, then reopen PowerShell."
@@ -12,6 +12,7 @@ if ($nodeMajor -lt 20) {
 }
 
 Set-Location (Resolve-Path (Join-Path $PSScriptRoot ".."))
+$appVersion = node -p "require('./package.json').version"
 Write-Host "Installing locked dependencies..."
 npm ci
 
@@ -21,4 +22,4 @@ npm run typecheck
 Write-Host "Building Windows installer and portable executable..."
 npm run dist
 
-Write-Host "`nBuild complete. Files are in release\1.0.0\" -ForegroundColor Green
+Write-Host "`nBuild complete. Files are in release\$appVersion\" -ForegroundColor Green

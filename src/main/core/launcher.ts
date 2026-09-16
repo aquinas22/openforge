@@ -2,20 +2,21 @@ import { ChildProcess, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { delimiter } from 'node:path'
-import type { Account, Settings } from '@shared/types'
+import type { Settings } from '@shared/types'
+import type { LaunchAccount } from './auth'
 import { GamePaths } from './paths'
 import { Argument, VersionDetail } from './manifest'
 import { isAllowed, mavenToPath } from './rules'
 import { selectLibraries } from './installer'
 
-const LAUNCHER_NAME = 'ArsFodina'
+const LAUNCHER_NAME = 'Openforge'
 const LAUNCHER_VERSION = '1.0.0'
 
 export interface LaunchOptions {
   paths: GamePaths
   version: VersionDetail
   instanceDir: string
-  account: Account
+  account: LaunchAccount
   settings: Settings
   ramMb: number
   onLog: (stream: 'stdout' | 'stderr', line: string) => void
@@ -67,11 +68,11 @@ function placeholderMap(
     game_assets: legacyAssets ? `${paths.assetsVirtual}/${assetsIndex}` : paths.assets,
     assets_index_name: assetsIndex,
     auth_uuid: opts.account.uuid.replace(/-/g, ''),
-    auth_access_token: '0',
-    auth_session: '0',
-    clientid: '',
-    auth_xuid: '',
-    user_type: 'msa',
+    auth_access_token: opts.account.accessToken,
+    auth_session: opts.account.accessToken,
+    clientid: opts.account.clientId,
+    auth_xuid: opts.account.xuid,
+    user_type: 'legacy',
     user_properties: '{}',
     version_type: version.type,
     natives_directory: paths.nativesDir(version.id),
@@ -147,8 +148,11 @@ export async function launchGame(opts: LaunchOptions): Promise<RunningGame> {
   const finalArgs = [...jvmArgs, version.mainClass, ...gameArgs]
   const javaPath = settings.javaPath || 'java'
 
-  opts.onLog('stdout', `[Ars Fodina] Launching ${version.id} with ${javaPath}`)
-  opts.onLog('stdout', `[Ars Fodina] ${javaPath} ${finalArgs.filter((a) => !a.includes(classpath)).join(' ')}`)
+  opts.onLog('stdout', `[Openforge] Launching ${version.id} with ${javaPath}`)
+  const safeArgs = finalArgs
+    .filter((arg) => !arg.includes(classpath))
+    .map((arg) => (arg === opts.account.accessToken && arg !== '0' ? '<access-token>' : arg))
+  opts.onLog('stdout', `[Openforge] ${javaPath} ${safeArgs.join(' ')}`)
 
   const child: ChildProcess = spawn(javaPath, finalArgs, {
     cwd: opts.instanceDir,
@@ -165,7 +169,7 @@ export async function launchGame(opts: LaunchOptions): Promise<RunningGame> {
   child.stderr?.on('data', (d: Buffer) => rl(d, 'stderr'))
   child.on('close', (code) => opts.onExit(code))
   child.on('error', (err) => {
-    opts.onLog('stderr', `[Ars Fodina] Failed to start Java: ${err.message}`)
+    opts.onLog('stderr', `[Openforge] Failed to start Java: ${err.message}`)
     opts.onExit(-1)
   })
 

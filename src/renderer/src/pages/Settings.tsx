@@ -1,18 +1,30 @@
 import { useEffect, useState } from 'react'
-import { Check, FolderOpen, Cpu, HardDrive, MemoryStick, Package, RefreshCw, User, Palette } from 'lucide-react'
+import {
+  Check,
+  FolderOpen,
+  Cpu,
+  HardDrive,
+  MemoryStick,
+  Package,
+  RefreshCw,
+  ShieldCheck,
+  User,
+  Palette,
+  Keyboard
+} from 'lucide-react'
 import { api } from '../api'
 import { useStore } from '../store/store'
-import type { Settings as SettingsType, ThemeId, UiStyle } from '@shared/types'
-import { Avatar, Sprite, themeBlock } from '../components/bits'
+import type { LaunchMode, Settings as SettingsType, ThemeId, UiStyle } from '@shared/types'
+import { Avatar, themeArt } from '../components/bits'
 
-/** Biome themes, named for the layer of the world they are cut from. */
+/** Six forge worlds, each with its own generated key art and material palette. */
 const THEMES: { id: ThemeId; name: string; latin: string }[] = [
-  { id: 'terra', name: 'Overworld', latin: 'Terra Viridis' },
-  { id: 'infernum', name: 'Nether', latin: 'Infernum' },
-  { id: 'finis', name: 'The End', latin: 'Finis' },
-  { id: 'tenebrae', name: 'Deep Dark', latin: 'Tenebrae' },
-  { id: 'glacies', name: 'Snowy', latin: 'Glacies' },
-  { id: 'lux', name: 'Daylight', latin: 'Lux' }
+  { id: 'terra', name: 'Overworld', latin: 'Verdant forge' },
+  { id: 'infernum', name: 'Nether', latin: 'Ember forge' },
+  { id: 'finis', name: 'The End', latin: 'Void forge' },
+  { id: 'tenebrae', name: 'Deep Dark', latin: 'Deep forge' },
+  { id: 'glacies', name: 'Snowy', latin: 'Frost forge' },
+  { id: 'lux', name: 'Daylight', latin: 'Sunlit forge' }
 ]
 
 function Section({ icon, title, children }: { icon: JSX.Element; title: string; children: React.ReactNode }): JSX.Element {
@@ -34,6 +46,7 @@ function Toggle({ on, onClick }: { on: boolean; onClick: () => void }): JSX.Elem
 export function Settings(): JSX.Element {
   const settings = useStore((s) => s.settings)
   const account = useStore((s) => s.account)
+  const systemInfo = useStore((s) => s.systemInfo)
   const java = useStore((s) => s.java)
   const refreshJava = useStore((s) => s.refreshJava)
   const saveSettings = useStore((s) => s.saveSettings)
@@ -93,6 +106,42 @@ export function Settings(): JSX.Element {
         </div>
       </Section>
 
+      <Section icon={<Keyboard size={18} />} title="Play mode">
+        <div className="style-picker">
+          {([
+            [
+              'official',
+              'Online · Official launcher',
+              'Loads this instance in Minecraft Launcher for secure Microsoft sign-in and online-mode servers.'
+            ],
+            [
+              'offline',
+              'Offline · Direct launch',
+              'Starts immediately from Openforge with your offline profile. Online-mode servers will reject it.'
+            ]
+          ] as [LaunchMode, string, string][]).map(([id, title, detail]) => (
+            <button
+              key={id}
+              className={`style-card${form.launchMode === id ? ' active' : ''}`}
+              onClick={() => set('launchMode', id)}
+              aria-pressed={form.launchMode === id}
+            >
+              <span className={`launch-mode-icon ${id}`} aria-hidden="true">
+                {id === 'official' ? <ShieldCheck size={24} /> : <User size={24} />}
+              </span>
+              <span>
+                <strong>{title}</strong>
+                <small>{detail}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="hint" style={{ marginTop: 10 }}>
+          Online mode creates an “Openforge · instance name” installation and opens Minecraft Launcher.
+          Select it there and press Play. Your mods, saves, and settings stay in the Openforge instance.
+        </div>
+      </Section>
+
       <Section icon={<Palette size={18} />} title="Appearance">
         <div className="field">
           <label>Interface style</label>
@@ -129,15 +178,15 @@ export function Settings(): JSX.Element {
                 onClick={() => set('theme', t.id)}
                 aria-pressed={form?.theme === t.id}
               >
-                <span className="theme-swatch slot">
-                  <Sprite src={themeBlock[t.id]} size={32} />
+                <span className="theme-swatch">
+                  <img src={themeArt[t.id]} alt="" />
                 </span>
                 <span className="theme-name">{t.name}</span>
                 <span className="theme-latin">{t.latin}</span>
               </button>
             ))}
           </div>
-          <div className="hint">Each theme repaints the accent and the banner behind the app.</div>
+          <div className="hint">Each theme changes the materials, accent, and generated forge landscape.</div>
         </div>
       </Section>
 
@@ -175,7 +224,7 @@ export function Settings(): JSX.Element {
             {java.length
               ? `Found ${java.length} runtime${java.length === 1 ? '' : 's'}: Java ${java
                   .map((j) => j.majorVersion)
-                  .join(', ')}. Ars Fodina picks the version each Minecraft build asks for.`
+                  .join(', ')}. Openforge picks the version each Minecraft build asks for.`
               : 'No Java found yet. Install a JDK (Adoptium/Temurin) and rescan.'}
           </div>
         </div>
@@ -191,15 +240,21 @@ export function Settings(): JSX.Element {
             className="slider"
             type="range"
             min={1024}
-            max={65536}
-            step={512}
+            max={systemInfo?.maxRamMb ?? 4096}
+            step={256}
             value={form.ramMb}
             onChange={(e) => set('ramMb', Number(e.target.value))}
           />
           <div className="between hint" style={{ marginTop: 6 }}>
             <span>1 GB</span>
-            <span>64 GB</span>
+            <span>{((systemInfo?.maxRamMb ?? 4096) / 1024).toFixed(1)} GB safe maximum</span>
           </div>
+          {systemInfo && (
+            <div className="hint" style={{ marginTop: 8 }}>
+              Your computer has {(systemInfo.totalMemoryMb / 1024).toFixed(1)} GB installed. Openforge
+              reserves enough for Windows and background apps.
+            </div>
+          )}
         </div>
         <div className="field" style={{ marginBottom: 0 }}>
           <label>JVM arguments</label>
@@ -252,7 +307,7 @@ export function Settings(): JSX.Element {
             />
           </div>
         </div>
-        <div className="between">
+        <div className="between setting-toggle-row">
           <div>
             <label style={{ fontWeight: 600, fontSize: 13 }}>Launch fullscreen</label>
             <div className="hint" style={{ marginTop: 2 }}>
@@ -260,6 +315,18 @@ export function Settings(): JSX.Element {
             </div>
           </div>
           <Toggle on={form.fullscreen} onClick={() => set('fullscreen', !form.fullscreen)} />
+        </div>
+        <div className="between setting-toggle-row">
+          <div>
+            <label style={{ fontWeight: 600, fontSize: 13 }}>Hide launcher while playing</label>
+            <div className="hint" style={{ marginTop: 2 }}>
+              Hide Openforge when Minecraft starts, then bring it back when the game closes.
+            </div>
+          </div>
+          <Toggle
+            on={form.closeLauncherOnLaunch}
+            onClick={() => set('closeLauncherOnLaunch', !form.closeLauncherOnLaunch)}
+          />
         </div>
       </Section>
 
@@ -290,6 +357,17 @@ export function Settings(): JSX.Element {
               ? 'A proxy URL is set, so the API key above is ignored.'
               : 'Empty — modpack browsing uses the API key above.'}
           </div>
+        </div>
+      </Section>
+
+      <Section icon={<Keyboard size={18} />} title="Keyboard shortcuts">
+        <div className="shortcut-grid">
+          <div><span>Open Library</span><kbd>Ctrl</kbd><kbd>1</kbd></div>
+          <div><span>Open Discover</span><kbd>Ctrl</kbd><kbd>2</kbd></div>
+          <div><span>Open Settings</span><kbd>Ctrl</kbd><kbd>3</kbd></div>
+          <div><span>New instance</span><kbd>Ctrl</kbd><kbd>N</kbd></div>
+          <div><span>Search modpacks</span><kbd>Ctrl</kbd><kbd>K</kbd></div>
+          <div><span>Close overlay</span><kbd>Esc</kbd></div>
         </div>
       </Section>
     </div>

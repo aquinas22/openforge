@@ -1,7 +1,13 @@
 import { useMemo } from 'react'
 import type { Instance, ThemeId } from '@shared/types'
 
-import logoUrl from '../assets/pixel/logo.png'
+import logoUrl from '../assets/art/openforge-mark-512.png'
+import artTerra from '../assets/art/forge-terra.webp'
+import artInfernum from '../assets/art/forge-infernum.webp'
+import artFinis from '../assets/art/forge-finis.webp'
+import artTenebrae from '../assets/art/forge-tenebrae.webp'
+import artGlacies from '../assets/art/forge-glacies.webp'
+import artLux from '../assets/art/forge-lux.webp'
 import blockGrass from '../assets/pixel/block-grass.png'
 import blockCrafting from '../assets/pixel/block-crafting.png'
 import blockFurnace from '../assets/pixel/block-furnace.png'
@@ -29,9 +35,9 @@ export const sprites = {
   pickaxe: iconPickaxe
 }
 
-/** The guild crest: a pickaxe crossed over an emerald seam. */
+/** The open forge gate: a warm portal cut into a block of forged iron. */
 export function Logo({ size = 26 }: { size?: number }): JSX.Element {
-  return <img className="pixel" src={sprites.logo} width={size} height={size} alt="" aria-hidden />
+  return <img className="brand-mark" src={sprites.logo} width={size} height={size} alt="" aria-hidden />
 }
 
 /** A pixel sprite at an exact multiple of its 64px grid. */
@@ -74,14 +80,14 @@ export function blockFor(inst: Pick<Instance, 'loader' | 'source' | 'id'>): stri
   }
 }
 
-/** Theme swatch blocks, used by the Settings picker. */
-export const themeBlock: Record<ThemeId, string> = {
-  terra: sprites.grass,
-  infernum: sprites.netherrack,
-  finis: sprites.endstone,
-  tenebrae: sprites.sculk,
-  glacies: sprites.ice,
-  lux: sprites.crafting
+/** AI-authored forge landscapes, used by the theme picker and world plates. */
+export const themeArt: Record<ThemeId, string> = {
+  terra: artTerra,
+  infernum: artInfernum,
+  finis: artFinis,
+  tenebrae: artTenebrae,
+  glacies: artGlacies,
+  lux: artLux
 }
 
 /** Deterministic blocky avatar for an offline player (no skin server needed). */
@@ -130,11 +136,12 @@ export function Avatar({ name, size = 40 }: { name: string; size?: number }): JS
   )
 }
 
-/** The biome plate behind the app: a hard band of terrain, cut off by bedrock. */
+/** The current forge landscape behind the workspace. */
 export function WorldBackground(): JSX.Element {
   return (
     <div className="world-bg" aria-hidden>
       <div className="world-plate" />
+      <div className="world-wash" />
     </div>
   )
 }

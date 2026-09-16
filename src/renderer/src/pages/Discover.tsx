@@ -5,7 +5,6 @@ import { useStore } from '../store/store'
 import type { CfFile, CfMod } from '@shared/types'
 import type { CfSearchInput } from '@shared/ipc'
 import { bytes, cleanError, compact } from '../util'
-import { Sprite, sprites } from '../components/bits'
 
 const SORTS: { key: NonNullable<CfSearchInput['sort']>; label: string }[] = [
   { key: 'popular', label: 'Popular' },
@@ -14,10 +13,18 @@ const SORTS: { key: NonNullable<CfSearchInput['sort']>; label: string }[] = [
   { key: 'released', label: 'Newest' }
 ]
 
+const STARTERS = [
+  { label: 'Adventure', query: 'adventure' },
+  { label: 'Technology', query: 'tech' },
+  { label: 'Magic', query: 'magic' },
+  { label: 'Lightweight', query: 'lightweight' },
+  { label: 'Skyblock', query: 'skyblock' }
+]
+
 function ModpackCard({ mod, onOpen }: { mod: CfMod; onOpen: (m: CfMod) => void }): JSX.Element {
   return (
     <div
-      className="panel"
+      className="panel discover-card"
       style={{ overflow: 'hidden', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
       onClick={() => onOpen(mod)}
     >
@@ -195,8 +202,8 @@ export function Discover(): JSX.Element {
   if (!cfStatus.available) {
     return (
       <div className="page">
-        <div className="empty" style={{ paddingTop: 90 }}>
-          <Sprite src={sprites.compass} size={72} />
+        <div className="empty empty-showcase">
+          <div className="empty-art" aria-hidden="true" />
           <h2 style={{ fontSize: 22, marginBottom: 8 }}>Connect CurseForge</h2>
           <p style={{ maxWidth: 440, margin: '0 auto 22px' }}>
             Add your CurseForge API key in Settings to browse and install modpacks.
@@ -217,13 +224,31 @@ export function Discover(): JSX.Element {
           <h1 className="page-title">
             Discover <span className="gradient-text">modpacks</span>
           </h1>
+          <p className="page-subtitle">Curated worlds, complete overhauls, and your next long-term save.</p>
         </div>
       </div>
 
-      <div className="row" style={{ gap: 10, marginBottom: 22 }}>
+      <div className="discovery-starters">
+        <span>Explore</span>
+        {STARTERS.map((starter) => (
+          <button
+            key={starter.query}
+            className={query === starter.query ? 'active' : ''}
+            onClick={() => {
+              setQuery(starter.query)
+              run(starter.query, sort)
+            }}
+          >
+            {starter.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="discover-search">
         <div style={{ position: 'relative', flex: 1 }}>
           <Search size={17} style={{ position: 'absolute', left: 14, top: 13, color: 'var(--muted)' }} />
           <input
+            id="discover-search"
             className="input"
             style={{ paddingLeft: 40 }}
             placeholder="Search modpacks (e.g. All the Mods, RLCraft, Better MC)…"
@@ -259,11 +284,25 @@ export function Discover(): JSX.Element {
           ))}
         </div>
       ) : (
-        <div className="grid-cards">
-          {results.map((m) => (
-            <ModpackCard key={m.id} mod={m} onOpen={setSelected} />
-          ))}
-        </div>
+        <>
+          <div className="results-summary">
+            <span>{results.length} modpacks</span>
+            <span>Sorted by {SORTS.find((option) => option.key === sort)?.label.toLowerCase()}</span>
+          </div>
+          {results.length ? (
+            <div className="grid-cards">
+              {results.map((m) => (
+                <ModpackCard key={m.id} mod={m} onOpen={setSelected} />
+              ))}
+            </div>
+          ) : (
+            <div className="empty search-empty">
+              <Search size={28} />
+              <h3>No modpacks found</h3>
+              <p>Try a broader title, category, or keyword.</p>
+            </div>
+          )}
+        </>
       )}
 
       {selected && <PackDrawer mod={selected} onClose={() => setSelected(null)} />}

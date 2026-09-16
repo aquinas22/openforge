@@ -1,7 +1,7 @@
 {
-  "name": "ars-fodina",
+  "name": "openforge",
   "version": "1.0.0",
-  "description": "Ars Fodina — a Minecraft launcher for Windows 11 with CurseForge modpacks and offline play.",
+  "description": "Openforge — a Minecraft launcher for Windows 11 with CurseForge modpacks and offline play.",
   "author": "Noah Roe",
   "license": "MIT",
   "main": "./out/main/index.js",
@@ -14,7 +14,10 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "dist": "electron-vite build && electron-builder --win --x64",
-    "dist:portable": "electron-vite build && electron-builder --win portable --x64"
+    "dist:portable": "electron-vite build && electron-builder --win portable --x64",
+    "dist:linux": "electron-vite build && electron-builder --win --x64 -c.win.signAndEditExecutable=false",
+    "dist:portable:linux": "electron-vite build && electron-builder --win portable --x64 -c.win.signAndEditExecutable=false",
+    "release:windows:linux": "bash scripts/build-windows-linux.sh"
   },
   "dependencies": {
     "adm-zip": "^0.5.16"

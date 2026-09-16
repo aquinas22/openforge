@@ -2,5 +2,6 @@ node_modules/
 out/
 out-tsc/
 release/
+.build-tools/
 *.log
 .DS_Store

@@ -18,11 +18,13 @@ interface ManagedIndex {
   mods: ManagedMod[]
 }
 
-const INDEX_NAME = '.arsfodina-mods.json'
+const INDEX_NAME = '.openforge-mods.json'
+const LEGACY_INDEX_NAME = '.arsfodina-mods.json'
 
 async function readIndex(instanceDir: string): Promise<ManagedIndex> {
   try {
-    return JSON.parse(await readFile(join(instanceDir, INDEX_NAME), 'utf8')) as ManagedIndex
+    const indexPath = existsSync(join(instanceDir, INDEX_NAME)) ? INDEX_NAME : LEGACY_INDEX_NAME
+    return JSON.parse(await readFile(join(instanceDir, indexPath), 'utf8')) as ManagedIndex
   } catch {
     return { mods: [] }
   }
@@ -151,7 +153,7 @@ export async function exportCurseForgePack(opts: {
     manifestVersion: 1,
     name: opts.instance.name,
     version: '1.0.0',
-    author: 'Ars Fodina',
+    author: 'Openforge',
     files: index.mods.map((mod) => ({ projectID: mod.projectId, fileID: mod.fileId, required: true })),
     overrides: 'overrides'
   }

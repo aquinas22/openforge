@@ -41,6 +41,7 @@ export function defaultSettings(): Settings {
     uiStyle: 'modern',
     cfProxyUrl: '',
     cfApiKey: '',
+    launchMode: 'official',
     closeLauncherOnLaunch: false,
     fullscreen: false,
     resolutionWidth: 1280,
@@ -49,7 +50,10 @@ export function defaultSettings(): Settings {
 }
 
 export function loadSettings(): Settings {
-  return readJson<Settings>('settings.json', defaultSettings())
+  const settings = readJson<Settings>('settings.json', defaultSettings())
+  // Strip the retired direct-auth application ID from older settings files.
+  delete (settings as Settings & { microsoftClientId?: string }).microsoftClientId
+  return settings
 }
 
 export function saveSettings(s: Settings): void {

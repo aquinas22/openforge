@@ -36,6 +36,7 @@ export function InstanceDetail(): JSX.Element | null {
     }))
   )
   const settings = useStore((s) => s.settings)
+  const systemInfo = useStore((s) => s.systemInfo)
   const openDetail = useStore((s) => s.openDetail)
   const openConsole = useStore((s) => s.openConsole)
   const launch = useStore((s) => s.launch)
@@ -158,8 +159,8 @@ export function InstanceDetail(): JSX.Element | null {
               className="slider"
               type="range"
               min={1024}
-              max={65536}
-              step={512}
+              max={systemInfo?.maxRamMb ?? 4096}
+              step={256}
               value={inst.ramMb ?? settings?.ramMb ?? 4096}
               disabled={st.running}
               onChange={async (e) => {
@@ -167,7 +168,10 @@ export function InstanceDetail(): JSX.Element | null {
                 await refreshInstances()
               }}
             />
-            <div className="between hint" style={{ marginTop: 5 }}><span>1 GB</span><span>64 GB</span></div>
+            <div className="between hint" style={{ marginTop: 5 }}>
+              <span>1 GB</span>
+              <span>{((systemInfo?.maxRamMb ?? 4096) / 1024).toFixed(1)} GB safe maximum</span>
+            </div>
           </div>
 
           <div id={`mods-${inst.id}`} className="drawer-anchor" />

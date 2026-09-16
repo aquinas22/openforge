@@ -1,22 +1,24 @@
 import { createHash } from 'node:crypto'
-import type { Account } from '@shared/types'
+import type { OfflineAccount } from '@shared/types'
 
-/**
- * Produce the same offline UUID vanilla Minecraft uses:
- *   UUID.nameUUIDFromBytes(("OfflinePlayer:" + name).getBytes(UTF_8))
- * which is an RFC-4122 version-3 (MD5) UUID. Deterministic per username so a
- * player keeps the same identity (and world data) across sessions.
- */
+export interface LaunchAccount {
+  username: string
+  uuid: string
+  type: 'offline'
+  accessToken: string
+  clientId: string
+  xuid: string
+}
+
+/** Produce the same deterministic offline UUID as vanilla Minecraft. */
 export function offlineUuid(username: string): string {
   const hash = createHash('md5').update(`OfflinePlayer:${username}`, 'utf8').digest()
-  // Set version (3) and IETF variant bits, matching java.util.UUID.
   hash[6] = (hash[6] & 0x0f) | 0x30
   hash[8] = (hash[8] & 0x3f) | 0x80
   const hex = hash.toString('hex')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
-/** UUID without dashes — the form Minecraft's game args expect. */
 export function undashUuid(uuid: string): string {
   return uuid.replace(/-/g, '')
 }
@@ -27,7 +29,16 @@ export function isValidUsername(name: string): boolean {
   return VALID_NAME.test(name)
 }
 
-export function makeOfflineAccount(username: string): Account {
+export function makeOfflineAccount(username: string): OfflineAccount {
   const clean = username.trim()
   return { username: clean, uuid: offlineUuid(clean), type: 'offline' }
+}
+
+export function launchAccount(offline: OfflineAccount): LaunchAccount {
+  return {
+    ...offline,
+    accessToken: '0',
+    clientId: '',
+    xuid: ''
+  }
 }
