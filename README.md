@@ -1,35 +1,96 @@
 # Openforge
 
-A beautiful, offline-first Minecraft launcher for Windows 11 with CurseForge modpack browsing and one-click instances. Built with Electron + React + TypeScript.
+A beautiful, fast Minecraft launcher for Windows 11. Modpacks, texture packs, shaders, and mods
+from **both Modrinth and CurseForge**, real Microsoft sign-in, and a Java runtime it manages for
+you — so a new player can go from a fresh install to playing Homestead or All the Mods without
+installing a JDK, pasting an API key, or reading a wiki page.
+
+Built with Electron + React + TypeScript.
 
 ![Openforge](build/icon.png)
 
 ## What it does
 
-- **Play offline** — no Microsoft account required. Openforge derives the same deterministic offline UUID vanilla uses (`UUID.nameUUIDFromBytes("OfflinePlayer:" + name)`), so your worlds and identity stay consistent across sessions.
-- **Authenticated multiplayer** — Openforge prepares the modded installation and hands it to the official Minecraft Launcher for secure account sign-in and online play.
-- **Real vanilla installs** — fetches the live Mojang version manifest, downloads the client jar, OS-ruled libraries, assets, and extracts natives, all hash-verified with a concurrent download pool.
-- **Every loader, one click** — Fabric (from Fabric's meta service) and **Forge / NeoForge** (by running their official installer headlessly, so the patch processors run exactly like the vanilla launcher does).
-- **CurseForge modpacks** — search, browse, and install modpacks. Downloads the pack, installs the required loader, resolves every mod, and applies overrides into an isolated instance.
-- **Per-instance everything** — each instance has its own mods, worlds, configs, RAM override, and game folder.
-- **Java auto-detection** — finds JDKs on `PATH`, `JAVA_HOME`, and common Windows install dirs, then picks the right major version for each Minecraft build.
-- **Live launch console** — streamed stdout/stderr with a progress dock for installs and launches.
-- **Library workspace** — search, filter, sort, favorite, and switch between grid/list views, with playtime and loader summaries at a glance.
-- **Fast keyboard navigation** — jump between sections with `Ctrl+1/2/3`, create an instance with `Ctrl+N`, or search modpacks with `Ctrl+K`.
+### Content, from everywhere
+
+- **Two providers, one interface.** Modrinth and CurseForge are normalized into the same shapes, so
+  a pack, a mod, a texture pack, and a shader all look and install the same way regardless of where
+  they came from.
+- **Modrinth needs no setup.** No API key, no proxy, no account. This is the default source, and it
+  carries most modern packs — Homestead included.
+- **CurseForge installs fast.** With a direct API key, Openforge resolves modpack files through the
+  bulk endpoints: a 400-mod pack like All the Mods resolves in one or two requests instead of four
+  hundred. That is the difference between an install measured in seconds and one measured in
+  minutes (and one that trips rate limits).
+- **Texture packs, shaders, and data packs are first-class**, not an afterthought. Browse and install
+  them exactly like mods, into the right folder, with a newly added texture pack switched on in
+  `options.txt` automatically.
+- **Import and export.** Drop in a `.mrpack` or a CurseForge pack zip; export any instance as either
+  format to share it.
+
+### Packs that update without eating your world
+
+Every pack install records exactly which files it wrote. Updating replaces the pack's mods and
+configs and removes files the previous release shipped that the new one dropped — while `saves/`,
+`screenshots/`, `logs/`, `crash-reports/`, and `backups/` are never touched, and mods you added by
+hand are never pruned. One-click world backups are a tab away.
+
+### Java, handled
+
+Minecraft pins an exact Java major version per release (8, 17, 21, and 25 for the newest builds),
+and a pack built for one will not start on another. Openforge detects what you already have —
+including runtimes the official launcher installed — and downloads the right Eclipse Temurin build
+when nothing fits. Checksum-verified, kept beside the game files, removable from Settings.
+
+### Online play, properly
+
+- **Microsoft sign-in** via the OAuth 2.0 device code flow: you finish in your own browser, the
+  launcher never sees a password, and there is no embedded webview. The full chain is implemented —
+  Microsoft identity → Xbox Live → XSTS → Minecraft services — including entitlement and profile
+  checks, silent token refresh, and specific messages for the failures players can actually fix
+  (no Xbox profile, child account, no Java Edition licence).
+- **Tokens are encrypted at rest** with Electron `safeStorage` (DPAPI on Windows), so a copied
+  `accounts.json` is useless on another machine. Where the platform offers no encryption, Openforge
+  refuses to persist the refresh token rather than writing a credential in plain text.
+- **Multiple accounts**, Microsoft and offline side by side, switchable in one click.
+- **Quick Play**: jump straight into a saved world or a server address from the instance drawer.
+- **Or hand off** to the official Minecraft Launcher if you would rather it own authentication.
+
+### The engine
+
+- **Real vanilla installs** — live Mojang manifest, client jar, OS-ruled libraries, assets, extracted
+  natives, all hash-verified through a concurrent download pool.
+- **Every loader**: Fabric and **Quilt** (from their meta services), **Forge / NeoForge** (by running
+  the official installer headlessly, so patch processors run exactly as the vanilla launcher does).
+- **Downloads that cannot corrupt an install.** Bytes land in a `.part` file and are renamed into
+  place only after the declared hash matches, so an interrupted download never leaves a truncated
+  jar that later looks valid — the cause of the most baffling modpack crashes.
+- **Mirrors and graceful degradation.** Dead CDN entries fall through to alternates; a pack whose
+  author opted out of third-party distribution produces an actionable list of links rather than a
+  number you can do nothing about.
+- **Per-instance everything** — own mods, worlds, configs, RAM, JVM flags, and Java override.
+- **Chromium's network stack.** Every request runs through Electron's `net`, so the system proxy,
+  PAC scripts, and this computer's certificate store all apply. Settings → Network runs a per-service
+  connection check and names HTTPS interception when it sees it.
 
 ## Design
 
-Openforge is built around an open forge-gate mark: dark iron around a warm portal with a single mint spark. Variable Inter handles the interface and headings while JetBrains Mono carries technical metadata, both bundled for offline use. Six biome themes each have original AI-authored 3D/painterly forge landscapes, dedicated material palettes, and theme-specific lighting. Functional sprites retain a small amount of pixel character, while the modern interface uses calmer depth, editorial typography, and art-led hero surfaces.
+Openforge is built around an open forge-gate mark: dark iron around a warm portal with a single mint
+spark. Variable Inter handles the interface, JetBrains Mono carries technical metadata, both bundled
+for offline use. Six biome themes each have original 3D/painterly forge landscapes, dedicated
+material palettes, and theme-specific lighting. The Daylight theme is a first-class light interface
+rather than a color inversion.
 
-The Daylight theme is a first-class light interface rather than a color inversion: warm limestone and parchment surfaces, forest-green actions, brighter form controls, softer brown-gray shadows, and a dedicated sunlit forge landscape.
-
-Existing installs are migrated automatically from the previous Ars Fodina and Aurora Launcher data directories, including settings, instances, worlds, libraries, and managed-mod records.
+Existing installs are migrated automatically from earlier Openforge, Ars Fodina, and Aurora Launcher
+data directories, including settings, instances, worlds, and managed-mod records. A 1.x offline
+username becomes your first account.
 
 ## Requirements
 
 - **Windows 11** (also runs on macOS/Linux for development)
 - **Node.js 20+** and **npm** (to build)
-- **Java** to actually launch the game — JDK 17 or 21 covers most modpacks; the newest Minecraft builds may want Java 25. Adoptium/Temurin recommended.
+- **Java** is no longer a prerequisite — Openforge fetches the runtime each pack needs. You can still
+  point it at your own JDK in Settings.
 
 ## Getting started
 
@@ -38,6 +99,28 @@ npm install        # installs deps + the Electron binary
 npm run dev        # hot-reloading dev app
 ```
 
+## Verifying
+
+```bash
+npm run check      # typecheck both projects, then run the core verification suite
+```
+
+`scripts/verify.ts` bundles and runs the **real** core modules under Node against a local HTTP server
+that stands in for the Modrinth CDN and a CurseForge proxy. That means the whole modpack path —
+resolve, download, hash-verify, apply overrides, prune on update — is proven without touching the
+internet, including:
+
+- a pack update that removes a dropped mod while leaving the player's world byte-for-byte intact,
+- a hand-added mod surviving that same update,
+- a `../` zip-slip entry being refused,
+- a hash mismatch failing the download and leaving no file or `.part` behind,
+- a dead primary URL falling through to a mirror,
+- client-unsupported (server-only) mods being skipped,
+- `options.txt` merging texture packs without duplicating or clobbering other settings.
+
+Live service reachability is probed at the end and **reported, not asserted**, so the suite is green
+on an offline or restricted network.
+
 ## Building the Windows app
 
 ```bash
@@ -45,54 +128,45 @@ npm run dist            # NSIS installer + portable .exe (x64)  -> release/<vers
 npm run dist:portable   # portable .exe only
 ```
 
-Artifacts land in `release/<version>/`. The NSIS installer lets the user choose the install directory and creates Start-menu/desktop shortcuts.
-
 ### One-click Windows build
 
-Install **Node.js 20 LTS or newer** from <https://nodejs.org>, download or clone this project, then double-click `build-windows.cmd`. The helper installs the exact locked dependencies, type-checks the project, and builds both the installer and portable executable.
-
-You do not need Visual Studio or a JDK to package the launcher. Java 17/21/25 is only needed when using the finished launcher to install loaders and run Minecraft.
-
-> Run `npm run dist` **on Windows** (or a Windows CI runner) to produce signed-ready `.exe` output. electron-builder cross-building for Windows from Linux/macOS works for unsigned builds but Windows is the reliable path.
+Install **Node.js 20 LTS or newer** from <https://nodejs.org>, then double-click `build-windows.cmd`.
+It installs the locked dependencies, type-checks the project, and builds both the installer and the
+portable executable. You do not need Visual Studio or a JDK to package the launcher.
 
 ### Build Windows releases on a Linux server
-
-Run the reusable server builder from the repository root:
 
 ```bash
 npm run release:windows:linux
 ```
 
-The server needs Node.js 20+, npm, and Wine. The script installs the locked dependencies, type-checks the complete app, builds the NSIS installer and portable Windows executable, then prints artifact sizes and SHA-256 checksums. The Linux-specific packaging command disables Electron Builder's Windows resource-edit/signing pass and initializes an isolated Wine prefix in `.build-tools/`. Repeated builds can reuse the current dependencies:
+Needs Node.js 20+, npm, and Wine. Cross-built artifacts are unsigned and do not receive the
+configured icon/version resource, so build on Windows when you need final signing and executable
+metadata.
 
-```bash
-npm run release:windows:linux -- --skip-install
-```
+## Setting up Microsoft sign-in
 
-To build only the portable executable:
+Microsoft grants Minecraft sign-in only to a registered Azure application, and Openforge ships no
+shared client ID of its own. To sign in natively:
 
-```bash
-npm run release:windows:linux -- --skip-install --portable-only
-```
+1. Create a free app registration in the Azure portal (supported account type: **personal Microsoft
+   accounts**; platform: **public client / native**, with device-code flow allowed).
+2. Paste its **Application (client) ID** into Settings → Microsoft sign-in.
+3. Open the account menu and choose **Sign in** — a code appears, you enter it once in your browser.
 
-Artifacts are written to `release/<package version>/`. Cross-built Linux artifacts are unsigned and do not receive the configured executable icon/version resource, so Windows SmartScreen may prompt on first launch. Build on Windows when you need final signing and executable metadata.
-
-## Online and offline play
-
-Online mode registers each Openforge instance as an installation in the official Minecraft
-Launcher, then opens that launcher. Microsoft authentication, account ownership, Realms, and
-online-mode multiplayer are handled entirely by Minecraft Launcher. Openforge never receives or
-stores Microsoft credentials.
-
-Offline mode launches directly from Openforge with the configured local profile. It supports
-single-player, LAN, and servers that explicitly disable online mode.
+Leave the field empty and online play uses the Minecraft Launcher hand-off instead, which needs no
+setup at all.
 
 ## CurseForge setup
 
-Openforge never ships an API key inside the desktop app. Two ways to connect (Settings → CurseForge):
+Modrinth works with no configuration. CurseForge needs one of:
 
-1. **Proxy (recommended)** — point Openforge at a [ServerCraft](../servercraft)-style server that holds the key server-side. Default: `http://localhost:3847`. Openforge calls `/api/cf/search`, `/api/cf/packs/:id`, and `/api/cf/packs/:id/files`.
-2. **Direct key (fallback)** — paste a free key from <https://console.curseforge.com>. Used only when no proxy URL is set. Direct mode also unlocks efficient per-file resolution for large packs.
+1. **Direct key (recommended)** — paste a free key from <https://console.curseforge.com>. This is the
+   only mode that unlocks bulk resolution, which large packs very much want.
+2. **Proxy** — point Openforge at a ServerCraft-style server that holds the key server-side. It calls
+   `/api/cf/search`, `/api/cf/packs/:id`, and `/api/cf/packs/:id/files`.
+
+Openforge never ships an API key inside the desktop app.
 
 ## Architecture
 
@@ -103,48 +177,46 @@ src/
     ipc.ts                 IPC orchestration, running-game registry
     core/
       paths.ts             filesystem layout
-      store.ts             JSON persistence (settings / instances / account)
-      auth.ts              offline UUID and local launch identity
-      http.ts              hash-verified downloads + concurrency pool
+      store.ts             JSON persistence (settings / instances) + 1.x migration
+      accounts.ts          account book; tokens encrypted with safeStorage
+      auth.ts              deterministic offline UUIDs
+      msauth.ts            Microsoft -> Xbox Live -> XSTS -> Minecraft services
+      network.ts           proxy configuration for Chromium's stack
+      http.ts              transport, atomic hash-verified downloads, mirrors
       manifest.ts          Mojang version manifest + version JSON types
       rules.ts             OS/allow-disallow rules, native classifiers, maven paths
       installer.ts         resolve + install (client, libs, assets, natives)
-      fabric.ts            Fabric loader install
+      fabric.ts            Fabric + Quilt loader install
       forge.ts             Forge / NeoForge headless install + version listing
-      launcher.ts          JVM command-line build + spawn
       java.ts              Java discovery + version selection
-      curseforge.ts        CF client (proxy or direct) + forgecdn URLs
-      cfinstall.ts         client-side modpack install (manifest → mods → overrides)
+      javaprovision.ts     Eclipse Temurin download/extract/probe
+      launcher.ts          JVM command-line build + spawn, Quick Play
+      modrinth.ts          Modrinth v2 client
+      curseforge.ts        CurseForge client (proxy or direct) + bulk endpoints
+      packinstall.ts       .mrpack + CurseForge pack install, update pruning
+      content.ts           mods / texture packs / shaders / data packs
+      worlds.ts            world listing + backups
+      official-launcher.ts hand-off to the Minecraft Launcher
   preload/index.ts         contextBridge — exposes window.openforge
   shared/                  types + IPC contract shared by main & renderer
   renderer/                React UI (Vite)
-    src/
-      App.tsx              shell + routing
-      store/store.ts       Zustand store wired to main-process event streams
-      pages/               Library, Discover, Settings, modals, instance drawer
-      components/          title bar, rail, dock, console, world bg, logo, avatar
-      styles/global.css    the design system
 ```
 
-The renderer is fully sandboxed from the OS: it never touches the filesystem or network directly — every action funnels through the preload bridge into the main process.
-
-## Verified
-
-`scripts/smoke.ts` exercises the real core against live services (Mojang manifest, the CurseForge proxy, the forgecdn CDN) plus the pure algorithms:
-
-```bash
-npx esbuild scripts/smoke.ts --bundle --platform=node --format=esm --outfile=/tmp/smoke.mjs && node /tmp/smoke.mjs
-```
-
-## Prebuilt portable (Windows x64)
-
-`release/1.0.0/Openforge-1.0.0-portable.exe` is the ready-to-run portable build. The Linux-cross-built executable is **unsigned**, so Windows SmartScreen may ask once (`More info` → `Run anyway`). Running `npm run dist` on Windows produces the signed-ready installer and portable build with complete executable resource metadata.
+The renderer is fully sandboxed from the OS: it never touches the filesystem or network directly —
+every action funnels through the preload bridge into the main process.
 
 ## Known limitations
 
-- **Forge / NeoForge** now install and launch via the official installer. That installer downloads loader libraries and runs patch processors, so it needs network and a Java that matches the Minecraft version (Openforge auto-selects it; make sure the right JDK is installed). Very old Minecraft versions on a very new JDK can trip the processors — install the matching JDK if a loader install fails.
-- A small number of CurseForge mods opt out of third-party API distribution; those are reported as skipped and can be added manually to the instance's `mods/` folder. Large packs resolve fastest in direct-key mode.
-- Multiplayer on `online-mode=true` servers uses the official Minecraft Launcher and requires a genuine Microsoft account that owns Minecraft: Java Edition (or has an eligible Game Pass entitlement).
+- **Microsoft sign-in needs your own Azure client ID** (above). This is a Microsoft policy, not a
+  gap in the implementation; the flow itself is complete.
+- **Forge / NeoForge** install by running the official installer, so they need network access and a
+  Java matching the Minecraft version. Openforge provisions that automatically.
+- **A few CurseForge projects opt out of third-party distribution.** Those are listed with direct
+  links in the instance drawer so you can fetch them by hand; everything else installs normally.
+- **Networks that inspect HTTPS** (many schools and workplaces) will block Mojang, Modrinth, and
+  CurseForge with an untrusted certificate. Openforge reports this precisely in Settings → Network
+  and never disables certificate verification to work around it — install the organisation's root
+  certificate into the Windows trusted-root store, or use a different network.
 
 ## License
 

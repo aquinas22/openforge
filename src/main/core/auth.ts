@@ -1,15 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { OfflineAccount } from '@shared/types'
 
-export interface LaunchAccount {
-  username: string
-  uuid: string
-  type: 'offline'
-  accessToken: string
-  clientId: string
-  xuid: string
-}
-
 /** Produce the same deterministic offline UUID as vanilla Minecraft. */
 export function offlineUuid(username: string): string {
   const hash = createHash('md5').update(`OfflinePlayer:${username}`, 'utf8').digest()
@@ -32,13 +23,4 @@ export function isValidUsername(name: string): boolean {
 export function makeOfflineAccount(username: string): OfflineAccount {
   const clean = username.trim()
   return { username: clean, uuid: offlineUuid(clean), type: 'offline' }
-}
-
-export function launchAccount(offline: OfflineAccount): LaunchAccount {
-  return {
-    ...offline,
-    accessToken: '0',
-    clientId: '',
-    xuid: ''
-  }
 }

@@ -1,16 +1,17 @@
 import { create } from 'zustand'
 import type {
-  Account,
-  CfMod,
+  AccountSummary,
+  DeviceCodePrompt,
   Instance,
   JavaInfo,
+  JavaRuntimeStatus,
   LogLine,
   ProgressEvent,
   Settings,
   SystemInfo,
   VersionSummary
 } from '@shared/types'
-import type { CfInstallInput, CreateInstanceInput } from '@shared/ipc'
+import type { AuthEvent, CreateInstanceInput, PackInstallInput, ProviderStatus, QuickPlayInput } from '@shared/ipc'
 import { api } from '../api'
 import { cleanError } from '../util'
 
@@ -27,12 +28,13 @@ interface State {
   route: Route
   settings: Settings | null
   systemInfo: SystemInfo | null
-  account: Account | null
+  accounts: AccountSummary[]
   instances: Instance[]
   java: JavaInfo[]
+  javaRuntimes: JavaRuntimeStatus[]
   versions: VersionSummary[]
   latest: { release: string; snapshot: string }
-  cfStatus: { available: boolean; mode: 'proxy' | 'direct' | 'none' }
+  providers: ProviderStatus
 
   progress: Record<string, ProgressEvent>
   busy: Record<string, boolean>
@@ -43,22 +45,36 @@ interface State {
   detailInstance: string | null
   toasts: Toast[]
 
+  /** Live Microsoft sign-in, while the user finishes it in a browser. */
+  authPrompt: DeviceCodePrompt | null
+  authBusy: boolean
+
   init(): Promise<void>
   setRoute(r: Route): void
   toast(message: string, kind?: Toast['kind']): void
   dismissToast(id: number): void
 
   refreshInstances(): Promise<void>
+  refreshAccounts(): Promise<void>
   saveSettings(patch: Partial<Settings>): Promise<void>
-  saveAccount(name: string): Promise<void>
   refreshJava(): Promise<void>
+
+  addOfflineAccount(username: string): Promise<void>
+  setActiveAccount(id: string): Promise<void>
+  removeAccount(id: string): Promise<void>
+  startMicrosoftLogin(): Promise<void>
+  cancelMicrosoftLogin(): Promise<void>
 
   createInstance(input: CreateInstanceInput): Promise<void>
   deleteInstance(id: string): Promise<void>
-  launch(id: string): Promise<void>
+  duplicateInstance(id: string): Promise<void>
+  launch(id: string, quickPlay?: QuickPlayInput): Promise<void>
   install(id: string): Promise<void>
+  repair(id: string): Promise<void>
   kill(id: string): Promise<void>
-  cfInstall(input: CfInstallInput): Promise<void>
+  installPack(input: PackInstallInput): Promise<void>
+  importPack(): Promise<void>
+  updatePack(id: string): Promise<void>
 
   openConsole(id: string | null): void
   openDetail(id: string | null): void
@@ -72,12 +88,13 @@ export const useStore = create<State>((set, get) => ({
   route: 'library',
   settings: null,
   systemInfo: null,
-  account: null,
+  accounts: [],
   instances: [],
   java: [],
+  javaRuntimes: [],
   versions: [],
   latest: { release: '', snapshot: '' },
-  cfStatus: { available: false, mode: 'none' },
+  providers: { modrinth: true, curseforge: { available: false, mode: 'none', bulk: false } },
   progress: {},
   busy: {},
   running: {},
@@ -85,10 +102,13 @@ export const useStore = create<State>((set, get) => ({
   consoleFor: null,
   detailInstance: null,
   toasts: [],
+  authPrompt: null,
+  authBusy: false,
 
   async init() {
     if (initStarted) return // guard against React StrictMode's double effect run
     initStarted = true
+
     api.onProgress((e: ProgressEvent) => {
       set((s) => {
         const busy = { ...s.busy }
@@ -96,10 +116,7 @@ export const useStore = create<State>((set, get) => ({
         if (e.phase === 'running') {
           running[e.instanceId] = true
           busy[e.instanceId] = false
-        } else if (e.phase === 'done') {
-          running[e.instanceId] = false
-          busy[e.instanceId] = false
-        } else if (e.phase === 'error') {
+        } else if (e.phase === 'done' || e.phase === 'error') {
           running[e.instanceId] = false
           busy[e.instanceId] = false
         } else {
@@ -119,15 +136,32 @@ export const useStore = create<State>((set, get) => ({
       })
     })
 
-    const [settings, systemInfo, account, instances, cfStatus] = await Promise.all([
+    api.onAuthEvent((event: AuthEvent) => {
+      if (event.kind === 'success') {
+        set({ authPrompt: null, authBusy: false })
+        get().toast(`Signed in as ${event.username}`, 'success')
+        get().refreshAccounts()
+      } else if (event.kind === 'error') {
+        set({ authPrompt: null, authBusy: false })
+        get().toast(event.message, 'error')
+        get().refreshAccounts()
+      } else if (event.kind === 'cancelled') {
+        set({ authPrompt: null, authBusy: false })
+      }
+    })
+
+    const [settings, systemInfo, accounts, instances, providers] = await Promise.all([
       api.getSettings(),
       api.getSystemInfo(),
-      api.getAccount(),
+      api.listAccounts(),
       api.listInstances(),
-      api.cfStatus()
+      api.providerStatus()
     ])
-    set({ settings, systemInfo, account, instances, cfStatus, ready: true })
+    set({ settings, systemInfo, accounts, instances, providers, ready: true })
+
     get().refreshJava()
+    // The version manifest is nice-to-have; a blocked network must not stop the
+    // launcher from opening and showing what is already installed.
     api
       .listVersions()
       .then(({ latest, versions }) => set({ latest, versions }))
@@ -138,27 +172,52 @@ export const useStore = create<State>((set, get) => ({
   toast: (message, kind = 'info') => {
     const id = toastSeq++
     set((s) => ({ toasts: [...s.toasts, { id, kind, message }] }))
-    setTimeout(() => get().dismissToast(id), 5200)
+    setTimeout(() => get().dismissToast(id), 6200)
   },
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
   async refreshInstances() {
     set({ instances: await api.listInstances() })
   },
+  async refreshAccounts() {
+    set({ accounts: await api.listAccounts() })
+  },
   async saveSettings(patch) {
     const settings = await api.saveSettings(patch)
-    const cfStatus = await api.cfStatus()
-    set({ settings, cfStatus })
-  },
-  async saveAccount(name) {
-    set({ account: await api.saveAccount(name) })
+    const providers = await api.providerStatus()
+    set({ settings, providers })
   },
   async refreshJava() {
     try {
-      set({ java: await api.discoverJava() })
+      const [java, javaRuntimes] = await Promise.all([api.discoverJava(), api.javaRuntimes()])
+      set({ java, javaRuntimes })
     } catch {
-      /* ignore */
+      /* Java discovery is best-effort */
     }
+  },
+
+  async addOfflineAccount(username) {
+    set({ accounts: await api.addOfflineAccount(username) })
+  },
+  async setActiveAccount(id) {
+    set({ accounts: await api.setActiveAccount(id) })
+  },
+  async removeAccount(id) {
+    set({ accounts: await api.removeAccount(id) })
+  },
+  async startMicrosoftLogin() {
+    set({ authBusy: true })
+    try {
+      const prompt = await api.startMicrosoftLogin()
+      set({ authPrompt: prompt })
+    } catch (e) {
+      set({ authBusy: false })
+      get().toast(cleanError(e), 'error')
+    }
+  },
+  async cancelMicrosoftLogin() {
+    await api.cancelMicrosoftLogin()
+    set({ authPrompt: null, authBusy: false })
   },
 
   async createInstance(input) {
@@ -171,8 +230,17 @@ export const useStore = create<State>((set, get) => ({
     set((s) => ({ detailInstance: s.detailInstance === id ? null : s.detailInstance }))
     await get().refreshInstances()
   },
-  async launch(id) {
-    const res = await api.launchInstance(id)
+  async duplicateInstance(id) {
+    try {
+      await api.duplicateInstance(id)
+      get().toast('Instance duplicated', 'success')
+    } catch (e) {
+      get().toast(cleanError(e), 'error')
+    }
+    await get().refreshInstances()
+  },
+  async launch(id, quickPlay) {
+    const res = await api.launchInstance(id, quickPlay)
     if (!res.ok && res.error) get().toast(res.error, 'error')
     else get().toast('Launching Minecraft…', 'success')
   },
@@ -185,16 +253,45 @@ export const useStore = create<State>((set, get) => ({
     }
     get().refreshInstances()
   },
+  async repair(id) {
+    try {
+      await api.repairInstance(id)
+      get().toast('Files verified and repaired', 'success')
+    } catch (e) {
+      get().toast(cleanError(e), 'error')
+    }
+    get().refreshInstances()
+  },
   async kill(id) {
     await api.killInstance(id)
   },
-  async cfInstall(input) {
+  async installPack(input) {
     get().toast(`Installing ${input.name}…`, 'info')
     try {
-      const inst = await api.cfInstall(input)
+      await api.installPack(input)
       set({ route: 'library', detailInstance: null })
       get().toast(`${input.name} installed`, 'success')
-      void inst
+    } catch (e) {
+      get().toast(cleanError(e), 'error')
+    }
+    get().refreshInstances()
+  },
+  async importPack() {
+    try {
+      const inst = await api.importPack()
+      if (inst) {
+        set({ route: 'library' })
+        get().toast(`${inst.name} imported`, 'success')
+      }
+    } catch (e) {
+      get().toast(cleanError(e), 'error')
+    }
+    get().refreshInstances()
+  },
+  async updatePack(id) {
+    try {
+      await api.updatePack(id)
+      get().toast('Modpack updated — your worlds were left untouched', 'success')
     } catch (e) {
       get().toast(cleanError(e), 'error')
     }
@@ -205,4 +302,7 @@ export const useStore = create<State>((set, get) => ({
   openDetail: (id) => set({ detailInstance: id })
 }))
 
-export type { CfMod }
+/** The account the game will launch with, if any. */
+export function activeAccount(accounts: AccountSummary[]): AccountSummary | null {
+  return accounts.find((account) => account.active) ?? null
+}

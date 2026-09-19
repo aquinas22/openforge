@@ -5,3 +5,4 @@ release/
 .build-tools/
 *.log
 .DS_Store
+.build-tmp/

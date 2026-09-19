@@ -35,7 +35,8 @@ const LOADER_LABEL: Record<string, string> = {
   vanilla: 'Vanilla',
   fabric: 'Fabric',
   forge: 'Forge',
-  neoforge: 'NeoForge'
+  neoforge: 'NeoForge',
+  quilt: 'Quilt'
 }
 export function loaderLabel(loader: string): string {
   return LOADER_LABEL[loader] ?? loader

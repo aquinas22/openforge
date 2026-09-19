@@ -1,7 +1,7 @@
 {
   "name": "openforge",
-  "version": "1.0.0",
-  "description": "Openforge — a Minecraft launcher for Windows 11 with CurseForge modpacks and offline play.",
+  "version": "2.0.0",
+  "description": "Openforge — the 2026 Minecraft launcher: Modrinth + CurseForge modpacks, texture packs, shaders, managed Java, and real Microsoft sign-in.",
   "author": "Noah Roe",
   "license": "MIT",
   "main": "./out/main/index.js",
@@ -17,7 +17,9 @@
     "dist:portable": "electron-vite build && electron-builder --win portable --x64",
     "dist:linux": "electron-vite build && electron-builder --win --x64 -c.win.signAndEditExecutable=false",
     "dist:portable:linux": "electron-vite build && electron-builder --win portable --x64 -c.win.signAndEditExecutable=false",
-    "release:windows:linux": "bash scripts/build-windows-linux.sh"
+    "release:windows:linux": "bash scripts/build-windows-linux.sh",
+    "verify": "esbuild scripts/verify.ts --bundle --platform=node --format=esm --packages=external --outfile=.build-tmp/verify.mjs --log-level=warning && node .build-tmp/verify.mjs",
+    "check": "npm run typecheck && npm run verify"
   },
   "dependencies": {
     "adm-zip": "^0.5.16"
@@ -31,6 +33,7 @@
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
+    "esbuild": "^0.24.2",
     "lucide-react": "^0.460.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

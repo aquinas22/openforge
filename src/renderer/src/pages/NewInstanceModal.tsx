@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Blocks, Flame, Hammer, Loader2, Sparkles, X } from 'lucide-react'
+import { Blocks, Boxes, Flame, Hammer, Loader2, Sparkles, X } from 'lucide-react'
 import { api } from '../api'
 import { useStore } from '../store/store'
 import type { LoaderType } from '@shared/types'
@@ -8,7 +8,8 @@ const LOADERS: { key: LoaderType; label: string; icon: JSX.Element; desc: string
   { key: 'vanilla', label: 'Vanilla', icon: <Blocks size={18} />, desc: 'Pure Minecraft' },
   { key: 'fabric', label: 'Fabric', icon: <Sparkles size={18} />, desc: 'Lightweight mods' },
   { key: 'forge', label: 'Forge', icon: <Hammer size={18} />, desc: 'The classic mod loader' },
-  { key: 'neoforge', label: 'NeoForge', icon: <Flame size={18} />, desc: 'Modern Forge fork' }
+  { key: 'neoforge', label: 'NeoForge', icon: <Flame size={18} />, desc: 'Modern Forge fork' },
+  { key: 'quilt', label: 'Quilt', icon: <Boxes size={18} />, desc: 'Fabric-compatible fork' }
 ]
 
 export function NewInstanceModal({ onClose }: { onClose: () => void }): JSX.Element {
@@ -131,7 +132,9 @@ export function NewInstanceModal({ onClose }: { onClose: () => void }): JSX.Elem
               <div className="chip warn">No {label} builds for {selected}</div>
             ) : (
               <select className="select" value={loaderVersion} onChange={(e) => setLoaderVersion(e.target.value)}>
-                {loader === 'fabric' && <option value="">Latest stable (auto)</option>}
+                {(loader === 'fabric' || loader === 'quilt') && (
+                  <option value="">Latest stable (auto)</option>
+                )}
                 {loaderVersions.map((v) => (
                   <option key={v.version} value={v.version}>
                     {v.version}

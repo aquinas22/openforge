@@ -2132,3 +2132,540 @@ kbd {
 [data-theme='lux'][data-ui-style='modern'] .collection-stats {
   box-shadow: 0 8px 24px rgba(82, 68, 49, 0.09);
 }
+
+/* ===========================================================================
+   2.0 surfaces - providers, content kinds, accounts, diagnostics
+   Everything below is cut from the same strata tokens as the rest of the app:
+   recessed wells, bevelled edges, ore-vein accents. Nothing introduces a new
+   colour of its own.
+   =========================================================================== */
+
+/* -- Provider identity --------------------------------------------------- */
+.provider-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 21px;
+  padding: 0 9px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--vein-ink);
+  background: var(--vein);
+  box-shadow: inset 2px 2px 0 var(--edge-light), inset -2px -2px 0 var(--edge-dark);
+  white-space: nowrap;
+}
+.provider-tag.curseforge {
+  background: var(--vein-2);
+}
+.chip.tiny {
+  height: 18px;
+  padding: 0 6px;
+  font-size: 9.5px;
+  gap: 4px;
+}
+.chip.warn {
+  color: var(--vein-ink);
+  background: var(--gold);
+}
+
+/* -- Content-kind tabs --------------------------------------------------- */
+.kind-tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.kind-tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 13px;
+  text-align: left;
+  color: var(--dim);
+  background: var(--stone);
+  box-shadow: inset var(--bevel) var(--bevel) 0 var(--edge-light),
+    inset calc(var(--bevel) * -1) calc(var(--bevel) * -1) 0 var(--edge-dark);
+  transition: color 120ms ease, background 120ms ease;
+}
+.kind-tab > svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.kind-tab > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.kind-tab strong {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+.kind-tab small {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kind-tab:hover {
+  background: var(--slab);
+}
+.kind-tab.active {
+  background: var(--slab);
+  box-shadow: inset 0 0 0 2px var(--vein),
+    inset var(--bevel) var(--bevel) 0 var(--edge-light),
+    inset calc(var(--bevel) * -1) calc(var(--bevel) * -1) 0 var(--edge-dark);
+}
+.kind-tab.active > svg {
+  color: var(--vein);
+}
+
+/* -- Provider switch ----------------------------------------------------- */
+.provider-switch {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.provider-switch button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 16px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dim);
+  background: var(--bedrock);
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+}
+.provider-switch button small {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.provider-switch button.active {
+  color: var(--text);
+  background: var(--slab);
+  box-shadow: inset 0 0 0 2px var(--vein);
+}
+.provider-switch button.active small {
+  color: var(--vein);
+}
+
+/* -- Notices ------------------------------------------------------------- */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 15px;
+  margin-bottom: 16px;
+  background: var(--stone);
+  box-shadow: inset 0 0 0 2px var(--lode),
+    inset var(--bevel) var(--bevel) 0 var(--edge-light),
+    inset calc(var(--bevel) * -1) calc(var(--bevel) * -1) 0 var(--edge-dark);
+}
+.notice > svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--muted);
+}
+.notice > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+.notice strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+.notice span {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--dim);
+}
+.notice.danger {
+  box-shadow: inset 0 0 0 2px var(--danger);
+}
+.notice.danger > svg {
+  color: var(--danger);
+}
+.notice.warn {
+  box-shadow: inset 0 0 0 2px var(--gold);
+}
+.notice.warn > svg {
+  color: var(--gold);
+}
+.notice.accent {
+  align-items: center;
+  box-shadow: inset 0 0 0 2px var(--vein);
+}
+.notice.accent > svg {
+  color: var(--vein);
+}
+
+/* -- Discover cards ------------------------------------------------------ */
+.discover-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  text-align: left;
+  cursor: pointer;
+}
+.discover-card-art {
+  position: relative;
+  height: 130px;
+  flex-shrink: 0;
+}
+.discover-card-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.discover-card-downloads {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+}
+.discover-card-art .provider-tag {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+}
+.discover-card-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 12px 14px 14px;
+}
+.discover-card-title {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 3px;
+}
+.discover-card-author {
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.discover-card-summary {
+  font-size: 12.5px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  flex: 1;
+}
+.discover-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 22px 0 8px;
+}
+
+/* -- Drawer chrome ------------------------------------------------------- */
+.drawer-hero {
+  position: relative;
+  height: 156px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.drawer-hero img,
+.drawer-hero-blank {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--slab);
+}
+.drawer-hero-wash {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(12, 13, 16, 0.35), rgba(12, 13, 16, 0.82));
+}
+.drawer-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+.drawer-hero-title {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 14px;
+  font-size: 24px;
+  line-height: 1.2;
+}
+.drawer-head {
+  padding: 18px 24px 16px;
+  flex-shrink: 0;
+}
+.drawer-head h2 {
+  font-size: 22px;
+  margin-bottom: 10px;
+}
+.drawer-chips {
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.drawer-summary {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.drawer-target {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px;
+  flex-shrink: 0;
+  background: var(--bedrock);
+  border-top: 2px solid var(--rule);
+  border-bottom: 2px solid var(--rule);
+}
+.drawer-target label {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.drawer-target .select {
+  flex: 1;
+}
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 24px;
+}
+.drawer-body-padded {
+  padding-top: 20px;
+}
+.drawer-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  padding: 10px 24px;
+  flex-shrink: 0;
+  background: var(--stone);
+  border-bottom: 3px solid var(--rule);
+}
+.drawer-tabs button {
+  min-height: 32px;
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--bedrock);
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+}
+.drawer-tabs button.active {
+  color: var(--text);
+  background: var(--slab);
+  box-shadow: inset 0 0 0 2px var(--vein);
+}
+
+/* -- Pill tabs (content kinds inside an instance) ------------------------ */
+.pill-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pill-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--bedrock);
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+}
+.pill-tabs button.active {
+  color: var(--vein-ink);
+  background: var(--vein);
+  box-shadow: inset 2px 2px 0 var(--edge-light), inset -2px -2px 0 var(--edge-dark);
+}
+
+/* -- Version rows -------------------------------------------------------- */
+.version-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  margin-bottom: 9px;
+}
+.version-main {
+  flex: 1;
+  min-width: 0;
+}
+.version-name {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.version-meta {
+  gap: 7px;
+  font-size: 11.5px;
+  flex-wrap: wrap;
+}
+
+/* -- Manual downloads ---------------------------------------------------- */
+.manual-list {
+  margin-bottom: 18px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.manual-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 14px;
+  border-top: 2px solid var(--rule);
+  font-size: 12.5px;
+}
+.manual-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -- Runtime / diagnostics rows ------------------------------------------ */
+.runtime-list {
+  overflow: hidden;
+}
+.runtime-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 14px;
+}
+.runtime-row + .runtime-row {
+  border-top: 2px solid var(--rule);
+}
+.runtime-row > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.runtime-row strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+.runtime-row small {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -- Accounts ------------------------------------------------------------ */
+.account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.account-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.account-pick {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  padding: 9px 12px;
+  text-align: left;
+  background: var(--bedrock);
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+}
+.account-row.active .account-pick {
+  background: var(--slab);
+  box-shadow: inset 0 0 0 2px var(--vein);
+}
+.account-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.account-meta strong {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.account-meta small {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.account-check {
+  color: var(--vein);
+  flex-shrink: 0;
+}
+.account-skin {
+  image-rendering: pixelated;
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+}
+
+/* -- Device-code sign-in ------------------------------------------------- */
+.device-code {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: var(--bedrock);
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+}
+.device-code p {
+  font-size: 12.5px;
+  line-height: 1.55;
+  margin: 0;
+}
+.device-code-value {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.device-code-value code {
+  flex: 1;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-align: center;
+  color: var(--vein);
+  background: var(--stone);
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+}

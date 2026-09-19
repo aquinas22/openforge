@@ -3,14 +3,21 @@ import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { delimiter } from 'node:path'
 import type { Settings } from '@shared/types'
-import type { LaunchAccount } from './auth'
+import type { LaunchAccount } from './accounts'
 import { GamePaths } from './paths'
 import { Argument, VersionDetail } from './manifest'
 import { isAllowed, mavenToPath } from './rules'
 import { selectLibraries } from './installer'
 
 const LAUNCHER_NAME = 'Openforge'
-const LAUNCHER_VERSION = '1.0.0'
+const LAUNCHER_VERSION = '2.0.0'
+
+/** Jump straight into a world or server instead of the main menu. */
+export interface QuickPlay {
+  type: 'singleplayer' | 'multiplayer' | 'realms'
+  /** World folder name, "host:port", or realm id. */
+  id: string
+}
 
 export interface LaunchOptions {
   paths: GamePaths
@@ -19,6 +26,10 @@ export interface LaunchOptions {
   account: LaunchAccount
   settings: Settings
   ramMb: number
+  javaPath: string
+  /** Per-instance JVM flags, appended after the global ones. */
+  extraJvmArgs?: string
+  quickPlay?: QuickPlay
   onLog: (stream: 'stdout' | 'stderr', line: string) => void
   onExit: (code: number | null) => void
 }
@@ -72,7 +83,9 @@ function placeholderMap(
     auth_session: opts.account.accessToken,
     clientid: opts.account.clientId,
     auth_xuid: opts.account.xuid,
-    user_type: 'legacy',
+    // "msa" is what tells the client it has a real session and may talk to
+    // online-mode servers; "legacy" keeps an offline profile local.
+    user_type: opts.account.userType,
     user_properties: '{}',
     version_type: version.type,
     natives_directory: paths.nativesDir(version.id),
@@ -82,7 +95,11 @@ function placeholderMap(
     classpath_separator: delimiter,
     library_directory: paths.libraries,
     resolution_width: String(opts.settings.resolutionWidth),
-    resolution_height: String(opts.settings.resolutionHeight)
+    resolution_height: String(opts.settings.resolutionHeight),
+    quickPlayPath: '',
+    quickPlaySingleplayer: opts.quickPlay?.type === 'singleplayer' ? opts.quickPlay.id : '',
+    quickPlayMultiplayer: opts.quickPlay?.type === 'multiplayer' ? opts.quickPlay.id : '',
+    quickPlayRealms: opts.quickPlay?.type === 'realms' ? opts.quickPlay.id : ''
   }
 }
 
@@ -108,6 +125,10 @@ function resolveArguments(
   return out
 }
 
+function splitArgs(value: string | undefined): string[] {
+  return value?.trim() ? value.trim().split(/\s+/) : []
+}
+
 export async function launchGame(opts: LaunchOptions): Promise<RunningGame> {
   const { paths, version, settings } = opts
   if (!existsSync(opts.instanceDir)) await mkdir(opts.instanceDir, { recursive: true })
@@ -115,17 +136,18 @@ export async function launchGame(opts: LaunchOptions): Promise<RunningGame> {
   const classpath = buildClasspath(paths, version).join(delimiter)
   const map = placeholderMap(paths, version, opts, classpath)
 
+  const quickPlay = opts.quickPlay
   const features: Record<string, boolean> = {
     is_demo_user: false,
     has_custom_resolution: !settings.fullscreen,
-    has_quick_plays_support: false,
-    is_quick_play_singleplayer: false,
-    is_quick_play_multiplayer: false,
-    is_quick_play_realms: false
+    has_quick_plays_support: Boolean(quickPlay),
+    is_quick_play_singleplayer: quickPlay?.type === 'singleplayer',
+    is_quick_play_multiplayer: quickPlay?.type === 'multiplayer',
+    is_quick_play_realms: quickPlay?.type === 'realms'
   }
 
   const memArgs = [`-Xmx${opts.ramMb}M`, `-Xms${Math.min(opts.ramMb, 1024)}M`]
-  const userJvm = settings.jvmArgs.trim() ? settings.jvmArgs.trim().split(/\s+/) : []
+  const userJvm = [...splitArgs(settings.jvmArgs), ...splitArgs(opts.extraJvmArgs)]
 
   let jvmArgs: string[]
   let gameArgs: string[]
@@ -145,8 +167,20 @@ export async function launchGame(opts: LaunchOptions): Promise<RunningGame> {
   jvmArgs = [...memArgs, ...userJvm, ...jvmArgs]
   if (settings.fullscreen) gameArgs.push('--fullscreen')
 
+  // Older profiles predate the quick-play feature flags, so add the flag by
+  // hand when the version JSON never declared it.
+  if (quickPlay && !gameArgs.some((arg) => arg.startsWith('--quickPlay'))) {
+    const flag =
+      quickPlay.type === 'multiplayer'
+        ? '--quickPlayMultiplayer'
+        : quickPlay.type === 'realms'
+          ? '--quickPlayRealms'
+          : '--quickPlaySingleplayer'
+    gameArgs.push(flag, quickPlay.id)
+  }
+
   const finalArgs = [...jvmArgs, version.mainClass, ...gameArgs]
-  const javaPath = settings.javaPath || 'java'
+  const javaPath = opts.javaPath || settings.javaPath || 'java'
 
   opts.onLog('stdout', `[Openforge] Launching ${version.id} with ${javaPath}`)
   const safeArgs = finalArgs

@@ -38,15 +38,26 @@ const NAV: { key: Route; label: string; sprite: string }[] = [
 
 const NAV_DETAIL: Record<Route, string> = {
   library: 'Your instances',
-  discover: 'Find modpacks',
+  discover: 'Packs, mods & textures',
   settings: 'Launcher setup'
 }
 
 export function Rail({ onAccount, onNew }: { onAccount: () => void; onNew: () => void }): JSX.Element {
   const route = useStore((s) => s.route)
   const setRoute = useStore((s) => s.setRoute)
-  const account = useStore((s) => s.account)
+  const account = useStore((s) => s.accounts.find((entry) => entry.active))
   const launchMode = useStore((s) => s.settings?.launchMode)
+  // What the player is about to launch as, in three words.
+  const identity = !account
+    ? 'No account yet'
+    : launchMode === 'official'
+      ? 'Via Minecraft Launcher'
+      : account.kind === 'microsoft'
+        ? account.needsReauth
+          ? 'Sign in again'
+          : 'Microsoft · online'
+        : 'Offline profile'
+  const online = Boolean(account && (launchMode === 'official' || (account.kind === 'microsoft' && !account.needsReauth)))
   return (
     <nav className="rail">
       <div className="rail-section-label">Workspace</div>
@@ -78,13 +89,16 @@ export function Rail({ onAccount, onNew }: { onAccount: () => void; onNew: () =>
       <div className="rail-spacer" />
       <button className="rail-account" onClick={onAccount} title="Manage accounts">
         <span className="rail-avatar">
-          <Avatar name={account?.username ?? 'Player'} size={40} />
+          {account?.avatarUrl ? (
+            <img src={account.avatarUrl} alt="" width={40} height={40} className="account-skin" />
+          ) : (
+            <Avatar name={account?.username ?? 'Player'} size={40} />
+          )}
         </span>
         <span className="rail-copy">
-          <strong>{account?.username ?? 'Player'}</strong>
+          <strong>{account?.username ?? 'Add an account'}</strong>
           <small>
-            <i className={`status-dot${launchMode === 'official' ? '' : ' offline'}`} />{' '}
-            {launchMode === 'official' ? 'Official online' : 'Offline profile'}
+            <i className={`status-dot${online ? '' : ' offline'}`} /> {identity}
           </small>
         </span>
       </button>

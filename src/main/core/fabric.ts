@@ -4,41 +4,81 @@ import { GamePaths } from './paths'
 import { VersionDetail } from './manifest'
 import { getJson } from './http'
 
-const FABRIC_META = 'https://meta.fabricmc.net/v2'
+/**
+ * Fabric and Quilt install the same way: their meta service hands back a
+ * complete version profile (mainClass + maven libraries, inheritsFrom the
+ * vanilla version), which we persist so the standard installer can resolve it.
+ * No Java, no installer jar, no patch processors - which is why these packs
+ * install in seconds next to a Forge pack's minute.
+ */
 
-interface FabricLoaderEntry {
-  loader: { version: string; stable: boolean; build: number }
+const META = {
+  fabric: 'https://meta.fabricmc.net/v2',
+  quilt: 'https://meta.quiltmc.org/v3'
+} as const
+
+export type FabricLike = keyof typeof META
+
+interface LoaderEntry {
+  loader: { version: string; stable?: boolean; build?: number }
   intermediary: { version: string }
 }
 
-export async function getFabricLoaderVersions(mcVersion: string): Promise<FabricLoaderEntry[]> {
-  return getJson<FabricLoaderEntry[]>(`${FABRIC_META}/versions/loader/${encodeURIComponent(mcVersion)}`)
+export interface LoaderVersion {
+  version: string
+  stable: boolean
+}
+
+export async function getFabricLikeVersions(
+  flavour: FabricLike,
+  mcVersion: string
+): Promise<LoaderVersion[]> {
+  const entries = await getJson<LoaderEntry[]>(
+    `${META[flavour]}/versions/loader/${encodeURIComponent(mcVersion)}`
+  )
+  return entries.map((entry) => ({
+    version: entry.loader.version,
+    // Quilt marks pre-releases in the version string rather than with a flag.
+    stable: entry.loader.stable ?? !/beta|rc|pre/i.test(entry.loader.version)
+  }))
+}
+
+/** Back-compat helper for callers that only ever wanted Fabric. */
+export async function getFabricLoaderVersions(mcVersion: string): Promise<LoaderVersion[]> {
+  return getFabricLikeVersions('fabric', mcVersion)
 }
 
 /**
- * Install Fabric for a Minecraft version. Fabric's meta service hands back a
- * complete version profile (mainClass + maven libraries, inheritsFrom the
- * vanilla version), which we persist so the standard installer can resolve it.
+ * Install Fabric or Quilt for a Minecraft version.
  * Returns the resulting version id to launch.
  */
-export async function installFabric(
+export async function installFabricLike(
+  flavour: FabricLike,
   paths: GamePaths,
   mcVersion: string,
   loaderVersion?: string
 ): Promise<string> {
   let loader = loaderVersion
   if (!loader) {
-    const versions = await getFabricLoaderVersions(mcVersion)
-    const stable = versions.find((v) => v.loader.stable) ?? versions[0]
-    if (!stable) throw new Error(`No Fabric loader available for ${mcVersion}`)
-    loader = stable.loader.version
+    const versions = await getFabricLikeVersions(flavour, mcVersion)
+    const stable = versions.find((v) => v.stable) ?? versions[0]
+    if (!stable) throw new Error(`No ${flavour} loader available for ${mcVersion}`)
+    loader = stable.version
   }
 
   const profile = await getJson<VersionDetail>(
-    `${FABRIC_META}/versions/loader/${encodeURIComponent(mcVersion)}/${encodeURIComponent(loader)}/profile/json`
+    `${META[flavour]}/versions/loader/${encodeURIComponent(mcVersion)}/${encodeURIComponent(loader)}/profile/json`
   )
   const dir = paths.versionDir(profile.id)
   if (!existsSync(dir)) await mkdir(dir, { recursive: true })
   await writeFile(paths.versionJson(profile.id), JSON.stringify(profile, null, 2))
   return profile.id
+}
+
+export async function installFabric(
+  paths: GamePaths,
+  mcVersion: string,
+  loaderVersion?: string
+): Promise<string> {
+  return installFabricLike('fabric', paths, mcVersion, loaderVersion)
 }

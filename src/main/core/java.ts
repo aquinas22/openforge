@@ -23,9 +23,11 @@ function parseVersion(output: string): { version: string; major: number } | null
 export async function probeJava(path: string): Promise<JavaInfo | null> {
   try {
     const { stderr, stdout } = await execFileAsync(path, ['-version'], { timeout: 8000 })
-    const parsed = parseVersion(stderr || stdout)
+    const output = stderr || stdout
+    const parsed = parseVersion(output)
     if (!parsed) return null
-    return { path, version: parsed.version, majorVersion: parsed.major }
+    const arch = /64-Bit/i.test(output) ? 'x64' : /32-Bit/i.test(output) ? 'x86' : undefined
+    return { path, version: parsed.version, majorVersion: parsed.major, arch }
   } catch {
     return null
   }
@@ -38,7 +40,18 @@ function windowsCandidates(): string[] {
     process.env['LOCALAPPDATA'] && join(process.env['LOCALAPPDATA'], 'Programs')
   ].filter(Boolean) as string[]
 
-  const vendors = ['Java', 'Eclipse Adoptium', 'Eclipse Foundation', 'Microsoft', 'Zulu', 'BellSoft', 'Amazon Corretto']
+  const vendors = [
+    'Java',
+    'Eclipse Adoptium',
+    'Eclipse Foundation',
+    'Microsoft',
+    'Zulu',
+    'BellSoft',
+    'Amazon Corretto',
+    'AdoptOpenJDK',
+    'RedHat',
+    'Semeru'
+  ]
   const found: string[] = []
   for (const root of roots) {
     for (const vendor of vendors) {
@@ -54,24 +67,46 @@ function windowsCandidates(): string[] {
       }
     }
   }
+  // The official launcher ships its own runtimes; reuse them rather than
+  // downloading a second copy of the same JRE.
+  const appData = process.env['APPDATA']
+  if (appData) {
+    const runtimeRoot = join(appData, '.minecraft', 'runtime')
+    if (existsSync(runtimeRoot)) {
+      try {
+        for (const component of readdirSync(runtimeRoot)) {
+          for (const platform of readdirSync(join(runtimeRoot, component)).slice(0, 4)) {
+            const base = join(runtimeRoot, component, platform)
+            for (const inner of [join(base, 'bin', JAVA_BIN), join(base, component, 'bin', JAVA_BIN)]) {
+              if (existsSync(inner)) found.push(inner)
+            }
+          }
+        }
+      } catch {
+        /* layout differs — skip */
+      }
+    }
+  }
   return found
 }
 
 /** Discover all usable Java runtimes, best (highest major) first. */
-export async function discoverJava(preferred?: string): Promise<JavaInfo[]> {
+export async function discoverJava(preferred?: string, extraPaths: string[] = []): Promise<JavaInfo[]> {
   const candidates = new Set<string>()
   if (preferred) candidates.add(preferred)
+  for (const path of extraPaths) candidates.add(path)
   if (process.env.JAVA_HOME) candidates.add(join(process.env.JAVA_HOME, 'bin', JAVA_BIN))
   candidates.add(JAVA_BIN) // whatever is on PATH
   if (process.platform === 'win32') windowsCandidates().forEach((c) => candidates.add(c))
 
+  const managed = new Set(extraPaths)
   const results: JavaInfo[] = []
   const seen = new Set<string>()
   for (const path of candidates) {
     const info = await probeJava(path)
     if (info && !seen.has(info.version + info.path)) {
       seen.add(info.version + info.path)
-      results.push(info)
+      results.push(managed.has(path) ? { ...info, managed: true, vendor: 'Eclipse Temurin' } : info)
     }
   }
   return results.sort((a, b) => b.majorVersion - a.majorVersion)
@@ -79,14 +114,25 @@ export async function discoverJava(preferred?: string): Promise<JavaInfo[]> {
 
 /**
  * Pick the best Java for a given required major version. Modern Minecraft ships
- * a `javaVersion.majorVersion` in its version JSON (8, 16, 17, or 21).
+ * a `javaVersion.majorVersion` in its version JSON (8, 16, 17, 21, or 25).
  */
-export async function selectJava(requiredMajor: number, preferred?: string): Promise<JavaInfo | null> {
-  const all = await discoverJava(preferred)
+export async function selectJava(
+  requiredMajor: number,
+  preferred?: string,
+  extraPaths: string[] = []
+): Promise<JavaInfo | null> {
+  const all = await discoverJava(preferred, extraPaths)
+  return pickJava(all, requiredMajor)
+}
+
+/** Choose from an already-discovered list, so callers can probe only once. */
+export function pickJava(all: JavaInfo[], requiredMajor: number): JavaInfo | null {
   if (all.length === 0) return null
   const exact = all.find((j) => j.majorVersion === requiredMajor)
   if (exact) return exact
-  const higher = all.filter((j) => j.majorVersion >= requiredMajor).sort((a, b) => a.majorVersion - b.majorVersion)
+  const higher = all
+    .filter((j) => j.majorVersion >= requiredMajor)
+    .sort((a, b) => a.majorVersion - b.majorVersion)
   if (higher.length) return higher[0]
   // Nothing meets the requirement. Never fall back to an older runtime — modern
   // Minecraft is compiled for a newer class-file version (and passes JVM flags

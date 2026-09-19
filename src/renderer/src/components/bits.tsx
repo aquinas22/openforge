@@ -67,10 +67,15 @@ export function Sprite({
  * The loader decides the block, so the library reads as a row of ore samples.
  */
 export function blockFor(inst: Pick<Instance, 'loader' | 'source' | 'id'>): string {
-  if (inst.source === 'curseforge') return sprites.chest
+  // A published pack reads as a chest whichever store it came from.
+  if (inst.source === 'curseforge' || inst.source === 'modrinth' || inst.source === 'import') {
+    return sprites.chest
+  }
   switch (inst.loader) {
     case 'fabric':
       return sprites.crafting
+    case 'quilt':
+      return sprites.ice
     case 'forge':
       return sprites.furnace
     case 'neoforge':
