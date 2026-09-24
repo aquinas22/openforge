@@ -29,6 +29,25 @@ import { pickJava } from '../src/main/core/java'
 import { provisionableMajor, SUPPORTED_MAJORS } from '../src/main/core/javaprovision'
 import { dashUuid } from '../src/main/core/msauth'
 import type { Reporter } from '../src/main/core/installer'
+import { installVersion, isVersionReady, mergeVersions } from '../src/main/core/installer'
+import type { GamePaths } from '../src/main/core/paths'
+import type { VersionDetail } from '../src/main/core/manifest'
+import { friendlyKeyName, readKeyBindings, resetKeyBindings } from '../src/main/core/options'
+import {
+  buildCleanupPlan,
+  configOwner,
+  installedModIds,
+  isOrphanConfig,
+  listConfigFiles,
+  modIdFromJson,
+  modIdsFromToml,
+  planCleanup
+} from '../src/main/core/cleanup'
+import { stampIsFresh, stampKey } from '../src/main/core/stamp'
+import { installerUrl, processorOutputs, resolveProfileValue } from '../src/main/core/forge'
+import { stageFromLogLine } from '../src/main/core/launcher'
+import { gcArgs, recommendedRamMb, tunedJvmArgs } from '../src/shared/tuning'
+import { diagnoseCrash, explainError } from '../src/shared/errors'
 
 let failures = 0
 let checks = 0
@@ -449,6 +468,306 @@ async function liveConnectivity(): Promise<void> {
   console.log('    (network reachability is reported, not asserted)')
 }
 
+// -- Key bindings, configs, cleanup, install stamps -----------------------------
+
+const OPTIONS_SAMPLE = [
+  'version:3955',
+  'fov:0.25',
+  'key_key.attack:key.mouse.left',
+  'key_key.jump:key.keyboard.space',
+  'key_key.sneak:key.keyboard.left.shift',
+  'key_key.drop:key.keyboard.r',
+  'key_key.jei.showRecipe:key.keyboard.r',
+  'key_key.jei.showUses:key.keyboard.r:SHIFT',
+  'key_key.sodium.menu:key.keyboard.unknown',
+  'key_key.smoothCamera:key.keyboard.unknown',
+  'key_key.hotbar.1:key.keyboard.1',
+  'soundCategory_master:1.0'
+].join('\r\n')
+
+function keyBindingSuite(): void {
+  section('Key bindings (options.txt)')
+  const report = readKeyBindings(OPTIONS_SAMPLE)
+  ok(report.exists && !report.legacy, 'a modern options.txt is recognised')
+  ok(report.bindings.length === 9, 'every key_ line becomes a binding', String(report.bindings.length))
+  const jump = report.bindings.find((b) => b.id === 'key.jump')
+  ok(jump?.label === 'Jump' && jump.keyLabel === 'Space' && jump.isDefault, 'vanilla binding labelled, default detected')
+  const drop = report.bindings.find((b) => b.id === 'key.drop')
+  ok(drop?.isDefault === false && drop.defaultLabel === 'Q', 'a changed vanilla binding shows its default')
+  const uses = report.bindings.find((b) => b.id === 'key.jei.showUses')
+  ok(uses?.modifier === 'SHIFT' && uses.keyLabel === 'Shift + R', 'Forge key modifiers are parsed')
+  ok(uses?.category === 'jei' && uses.label === 'Show Uses', 'modded binding grouped by namespace')
+  ok(friendlyKeyName('key.keyboard.left.control') === 'Left Ctrl', 'left.control reads as Left Ctrl')
+  ok(friendlyKeyName('key.keyboard.keypad.7') === 'Numpad 7', 'keypad keys are named')
+  ok(friendlyKeyName('key.mouse.4') === 'Mouse 4', 'extra mouse buttons are named')
+  ok(friendlyKeyName('57') === 'Space', 'legacy LWJGL codes are named')
+
+  section('Key binding conflicts')
+  ok(report.conflicts.length === 1, 'one conflicting key found', JSON.stringify(report.conflicts))
+  ok(
+    report.conflicts[0]?.ids.sort().join(',') === 'key.drop,key.jei.showRecipe',
+    'R is shared by Drop and Show Recipe'
+  )
+  ok(!report.conflicts.some((c) => c.ids.includes('key.jei.showUses')), 'Shift+R does not clash with plain R')
+  ok(!report.conflicts.some((c) => c.ids.includes('key.sodium.menu')), 'unbound keys never conflict')
+  ok(report.bindings.find((b) => b.id === 'key.drop')?.conflict === true, 'conflicting rows are flagged')
+
+  section('Key binding reset')
+  const one = resetKeyBindings(OPTIONS_SAMPLE, ['key.drop'])
+  ok(one.includes('key_key.drop:key.keyboard.q'), 'a vanilla binding is written back to its default')
+  ok(one.includes('key_key.jei.showRecipe:key.keyboard.r'), 'other bindings are untouched')
+  ok(one.includes('fov:0.25') && one.includes('soundCategory_master:1.0'), 'non-key settings are preserved')
+  ok(one.includes('\r\n') && !/[^\r]\n/.test(one), 'CRLF line endings are kept')
+  const all = resetKeyBindings(OPTIONS_SAMPLE, null)
+  ok(!all.includes('key.jei.showRecipe'), 'reset all removes modded bindings (the game restores their defaults)')
+  ok(all.includes('key_key.drop:key.keyboard.q') && all.includes('key_key.jump:key.keyboard.space'), 'reset all restores vanilla defaults')
+  ok(readKeyBindings(all).conflicts.length === 0, 'no conflicts remain after reset all')
+  const legacy = readKeyBindings('key_key.jump:57\nkey_key.drop:16\n')
+  ok(legacy.legacy && legacy.bindings[0].keyLabel === 'Space', 'pre-1.13 numeric bindings are read')
+  ok(!resetKeyBindings('key_key.jump:57\nkey_key.drop:19\n', ['key.drop']).includes('key.drop'), 'legacy reset removes the line')
+  ok(!readKeyBindings(null).exists, 'a missing options.txt reports exists=false')
+}
+
+function cleanupPlanningSuite(): void {
+  section('Mod config ownership')
+  ok(modIdsFromToml('[[mods]]\nmodId="jei"\n[[mods]]\n  modId = \'jei_addon\'').join(',') === 'jei,jei_addon', 'mods.toml ids read')
+  ok(modIdFromJson('{"id":"sodium"}') === 'sodium', 'fabric.mod.json id read')
+  ok(modIdFromJson('{"quilt_loader":{"id":"qsl"}}') === 'qsl', 'quilt.mod.json id read')
+  ok(configOwner('config/jei/jei-client.ini') === 'jei', 'a config folder names its owner')
+  ok(configOwner('config/sodium-options.json') === 'sodium', 'file stem with -options suffix')
+  ok(configOwner('config/create-common.toml') === 'create', 'file stem with -common suffix')
+  const installed = ['jei', 'sodium', 'create', 'cloth-config-fabric-11.1.106']
+  ok(!isOrphanConfig('config/jei/jei-client.ini', installed), 'config of an installed mod is kept')
+  ok(!isOrphanConfig('config/cloth-config.json', installed), 'jar-in-jar bundled libraries count as installed')
+  ok(!isOrphanConfig('config/forge-client.toml', installed), 'loader configs are never orphans')
+  ok(isOrphanConfig('config/journeymap/journeymap.core.config', installed), 'config of a removed mod is flagged')
+  ok(!isOrphanConfig('config/ab.json', installed), 'names under three letters are never flagged')
+
+  section('Cleanup plan')
+  const plan = buildCleanupPlan(
+    [
+      { relPath: 'logs', bytes: 5000, files: 3 },
+      { relPath: 'crash-reports', bytes: 0, files: 0 },
+      { relPath: '.cache', bytes: 1200, files: 2 }
+    ],
+    [{ relPath: 'config/journeymap', bytes: 800, files: 4 }]
+  )
+  ok(plan.items.length === 3, 'empty folders are left out of the plan', plan.items.map((i) => i.relPath).join(','))
+  ok(plan.totalBytes === 7000, 'plan totals the sizes', String(plan.totalBytes))
+  ok(plan.items.find((i) => i.relPath === 'logs')?.recommended === true, 'logs are pre-selected')
+  const orphan = plan.items.find((i) => i.category === 'orphan-config')
+  ok(orphan?.recommended === false, 'heuristic orphan configs are never pre-selected')
+  ok(!plan.items.some((i) => /saves|screenshots|mods/.test(i.relPath)), 'worlds, screenshots and mods are never planned')
+}
+
+async function cleanupScanSuite(): Promise<void> {
+  section('Cleanup scan on a real folder')
+  const dir = makeTempDir('cleanup')
+  const mkfile = (rel: string, body = 'x'): void => {
+    const path = join(dir, ...rel.split('/'))
+    mkdirSync(join(path, '..'), { recursive: true })
+    writeFileSync(path, body)
+  }
+  const jar = new AdmZip()
+  jar.addFile('META-INF/mods.toml', Buffer.from('modLoader="javafml"\n[[mods]]\nmodId="create"\n'))
+  mkdirSync(join(dir, 'mods'), { recursive: true })
+  jar.writeZip(join(dir, 'mods', 'create-1.20.1-0.5.1.jar'))
+  mkfile('config/create-client.toml')
+  mkfile('config/journeymap/journeymap.core.config', 'abcdef')
+  mkfile('logs/latest.log', '0123456789')
+  mkfile('saves/World/level.dat')
+  const plan = await planCleanup(dir, true)
+  const paths = plan.items.map((i) => i.relPath)
+  ok(paths.includes('logs'), 'logs folder is planned', paths.join(','))
+  ok(paths.includes('config/journeymap'), 'orphaned mod config folder is planned as one item')
+  ok(!paths.some((p) => p.startsWith('config/create')), 'config of the installed mod is kept')
+  ok(!paths.some((p) => p.startsWith('saves')), 'worlds are never planned')
+  ok(plan.items.find((i) => i.relPath === 'logs')?.bytes === 10, 'sizes are measured')
+  const ids = await installedModIds(dir)
+  ok(ids.includes('create') && existsSync(join(dir, '.openforge', 'modids.json')), 'mod ids read from the jar and cached')
+  const configs = await listConfigFiles(dir, ids)
+  ok(configs.length === 2 && configs.some((c) => c.orphan) && configs.some((c) => !c.orphan), 'config listing marks orphans')
+  await rm(dir, { recursive: true, force: true })
+}
+
+function stampSuite(): void {
+  section('Install stamps')
+  const disk = new Map<string, { size: number; mtimeMs: number }>([
+    ['a.jar', { size: 10, mtimeMs: 1000.4 }],
+    ['b.jar', { size: 20, mtimeMs: 2000 }]
+  ])
+  const stat = (path: string): { size: number; mtimeMs: number } | null => disk.get(path) ?? null
+  const key = stampKey(['ready', 'x'])
+  ok(key === stampKey(['ready', 'x']) && key !== stampKey(['ready', 'y']), 'stamp keys are stable and input-sensitive')
+  ok(stampKey([undefined]) !== stampKey(['']), 'undefined and empty string produce different keys')
+  const stamp = {
+    schema: 1 as const,
+    key,
+    createdAt: '',
+    files: [
+      { path: 'a.jar', size: 10, mtimeMs: 1000.9 },
+      { path: 'b.jar', size: 20, mtimeMs: 2000 }
+    ]
+  }
+  ok(stampIsFresh(stamp, key, stat).fresh, 'an unchanged disk keeps the stamp fresh')
+  ok(!stampIsFresh(stamp, stampKey(['other']), stat).fresh, 'a changed definition invalidates the stamp')
+  ok(!stampIsFresh(null, key, stat).fresh, 'no stamp means not fresh')
+  disk.set('b.jar', { size: 21, mtimeMs: 2000 })
+  ok(stampIsFresh(stamp, key, stat).reason?.startsWith('size changed') === true, 'a resized file is caught')
+  disk.delete('a.jar')
+  ok(stampIsFresh(stamp, key, stat).reason?.startsWith('missing') === true, 'a deleted file is caught')
+}
+
+async function stampedInstallSuite(fixture: Fixture): Promise<void> {
+  section('Stamped install and warm-launch check')
+  const root = makeTempDir('install')
+  const paths = new FakeGamePaths(root) as unknown as GamePaths
+  const client = Buffer.from('client jar bytes')
+  const lib = Buffer.from('library jar bytes')
+  const objA = Buffer.from('asset a')
+  const index = Buffer.from(
+    JSON.stringify({ objects: { 'a.txt': { hash: sha1(objA), size: objA.length }, 'b.txt': { hash: sha1(objA), size: objA.length } } })
+  )
+  fixture.files.set('/client.jar', client)
+  fixture.files.set('/lib.jar', lib)
+  fixture.files.set('/index.json', index)
+  const version = {
+    id: 'test-1',
+    type: 'release',
+    mainClass: 'net.minecraft.client.main.Main',
+    assets: 'test',
+    assetIndex: { id: 'test', sha1: sha1(index), size: index.length, totalSize: 0, url: `${fixture.base}/index.json` },
+    downloads: { client: { sha1: sha1(client), size: client.length, url: `${fixture.base}/client.jar` } },
+    libraries: [
+      {
+        name: 'com.example:lib:1.0',
+        downloads: { artifact: { path: 'com/example/lib/1.0/lib-1.0.jar', sha1: sha1(lib), size: lib.length, url: `${fixture.base}/lib.jar` } }
+      }
+    ],
+    arguments: { game: [], jvm: [] }
+  }
+  mkdirSync(join(root, 'versions', 'test-1'), { recursive: true })
+  writeFileSync(join(root, 'versions', 'test-1', 'test-1.json'), JSON.stringify(version))
+  // The asset objects are served from the Mojang CDN path; the fixture stands in.
+  const assetUrl = `/${sha1(objA).slice(0, 2)}/${sha1(objA)}`
+  fixture.files.set(assetUrl, objA)
+  let installed: VersionDetail | null = null
+  try {
+    installed = await installVersion(paths, 'test-1', quiet, 4, 'quick', { resourcesBase: fixture.base })
+  } catch (err) {
+    ok(false, 'fixture install completes', (err as Error).message)
+  }
+  if (installed) {
+    ok(existsSync(join(root, 'libraries', 'com/example/lib/1.0/lib-1.0.jar')), 'library downloaded')
+    ok(existsSync(join(root, 'assets', 'objects', sha1(objA).slice(0, 2), sha1(objA))), 'shared asset object downloaded once')
+    ok((await isVersionReady(paths, installed)).fresh, 'a finished install is ready without any re-check')
+    writeFileSync(join(root, 'libraries', 'com/example/lib/1.0/lib-1.0.jar'), 'tampered, and longer than before')
+    const after = await isVersionReady(paths, installed)
+    ok(!after.fresh, 'a modified library makes the warm check fall back to repair', after.reason)
+    await installVersion(paths, 'test-1', quiet, 4, 'full', { resourcesBase: fixture.base })
+    ok(
+      readFileSync(join(root, 'libraries', 'com/example/lib/1.0/lib-1.0.jar')).equals(lib) &&
+        (await isVersionReady(paths, installed)).fresh,
+      'a full repair restores the file and the stamp'
+    )
+  }
+  await rm(root, { recursive: true, force: true })
+}
+
+function loaderProfileSuite(): void {
+  section('Forge/NeoForge install profile')
+  const ctx = { libraries: '/g/libraries', minecraftJar: '/g/versions/1.21.1/1.21.1.jar', root: '/g' }
+  const profile = {
+    data: {
+      PATCHED: { client: '[net.neoforged:neoforge:21.1.1:client]', server: '[x:y:1]' },
+      PATCHED_SHA: { client: "'0123456789abcdef0123456789abcdef01234567'" },
+      MC_OFF: { client: '[net.minecraft:client:1.21.1:official]' }
+    },
+    processors: [
+      { jar: 'a', outputs: { '{PATCHED}': '{PATCHED_SHA}' } },
+      { jar: 'b', sides: ['server'], outputs: { '{MC_SERVER}': "'ffff'" } },
+      { jar: 'c', sides: ['client'], outputs: { '{MC_OFF}': "'not-a-sha'" } }
+    ]
+  }
+  const outputs = processorOutputs(profile, ctx)
+  const norm = (p: string): string => p.replace(/\\/g, '/')
+  ok(outputs.length === 2, 'server-only processors are skipped', outputs.map((o) => norm(o.path)).join(','))
+  ok(
+    norm(outputs[0].path) === '/g/libraries/net/neoforged/neoforge/21.1.1/neoforge-21.1.1-client.jar',
+    'data references resolve to library paths'
+  )
+  ok(outputs[0].sha1 === '0123456789abcdef0123456789abcdef01234567', 'declared output hashes are carried')
+  ok(outputs[1].sha1 === undefined, 'values that are not sha1 hashes are ignored')
+  ok(resolveProfileValue('{MINECRAFT_JAR}', profile.data, ctx) === ctx.minecraftJar, 'built-in MINECRAFT_JAR resolves')
+  ok(
+    installerUrl('neoforge', '1.21.1', '21.1.1').endsWith('/neoforge/21.1.1/neoforge-21.1.1-installer.jar'),
+    'NeoForge installer url'
+  )
+  ok(
+    installerUrl('forge', '1.20.1', '47.2.0').endsWith('/1.20.1-47.2.0/forge-1.20.1-47.2.0-installer.jar'),
+    'Forge installer url'
+  )
+
+  section('Version merging')
+  const legacyChild = { id: 'forge-1.12.2', inheritsFrom: '1.12.2', type: 'release', mainClass: 'net.minecraft.launchwrapper.Launch', libraries: [], minecraftArguments: '--tweakClass x' }
+  const legacyParent = { id: '1.12.2', type: 'release', mainClass: 'net.minecraft.client.main.Main', libraries: [], minecraftArguments: '--username ${auth_player_name}' }
+  const merged = mergeVersions(legacyChild, legacyParent)
+  ok(merged.arguments === undefined, 'a legacy loader profile stays legacy (keeps its classpath and natives)')
+  ok(merged.minecraftArguments === '--tweakClass x', 'the loader supplies the legacy argument string')
+  const modern = mergeVersions(
+    { ...legacyChild, minecraftArguments: undefined, arguments: { game: ['--fml'], jvm: ['-DignoreList=x'] } },
+    { ...legacyParent, minecraftArguments: undefined, arguments: { game: ['--username'], jvm: ['-cp'] } }
+  )
+  ok(modern.arguments?.game.join(' ') === '--username --fml', 'modern arguments are concatenated parent first')
+}
+
+function tuningSuite(): void {
+  section('JVM defaults')
+  ok(recommendedRamMb({ totalMemoryMb: 16384, maxRamMb: 12288, loader: 'vanilla' }) === 3072, 'vanilla on 16 GB gets 3 GB')
+  ok(recommendedRamMb({ totalMemoryMb: 16384, maxRamMb: 12288, loader: 'neoforge', modCount: 40 }) === 4096, 'a small modpack gets 4 GB')
+  ok(recommendedRamMb({ totalMemoryMb: 32768, maxRamMb: 24576, loader: 'forge', modCount: 250 }) === 8192, 'a large modpack gets 8 GB')
+  ok(recommendedRamMb({ totalMemoryMb: 8192, maxRamMb: 6144, loader: 'neoforge', modCount: 300 }) === 4096, 'never more than half of system RAM')
+  const tuned = tunedJvmArgs({ javaMajor: 21, ramMb: 6144, loader: 'neoforge', userArgs: '' })
+  ok(tuned[0] === '-Xmx6144M' && tuned[1] === '-Xms3072M', 'modded launches commit half the heap up front')
+  ok(tuned.includes('-XX:+UseG1GC') && tuned.includes('-XX:G1HeapRegionSize=8M'), 'G1 tuned for Java 17+')
+  ok(gcArgs(8).includes('-XX:G1HeapRegionSize=32M') && !gcArgs(8).includes('-XX:+PerfDisableSharedMem'), 'Java 8 gets Mojang-style G1 flags')
+  ok(!tunedJvmArgs({ javaMajor: 21, ramMb: 4096, loader: 'fabric', userArgs: '-XX:+UseZGC' }).some((a) => a.includes('G1')), 'a user-chosen GC is respected')
+  ok(tunedJvmArgs({ javaMajor: 21, ramMb: 4096, loader: 'vanilla', userArgs: '' })[1] === '-Xms1024M', 'vanilla keeps a small initial heap')
+
+  section('Launch stages and error help')
+  ok(stageFromLogLine('[main/INFO]: Loading 212 mods:') === 'loading', 'Fabric mod loading detected')
+  ok(stageFromLogLine('[Render thread/INFO] [com.mojang.blaze3d.audio.Library/]: OpenAL initialized on device x') === 'ready', 'OpenAL init means in game')
+  ok(stageFromLogLine('[Render thread/INFO]: Sound engine started') === 'ready', 'sound engine start means in game')
+  ok(stageFromLogLine('random line') === null, 'ordinary lines are ignored')
+  ok(diagnoseCrash(['java.lang.OutOfMemoryError: Java heap space'])?.action === 'memory', 'out of memory suggests more memory')
+  ok(
+    diagnoseCrash(['class jdk.internal.loader.ClassLoaders$AppClassLoader cannot be cast to class java.net.URLClassLoader'])?.action === 'java',
+    'old Forge on new Java suggests Java settings'
+  )
+  ok(diagnoseCrash(['Missing or unsupported mandatory dependencies:'])?.action === 'console', 'missing dependency points at the console')
+  ok(diagnoseCrash(['all good']) === null, 'no diagnosis without a known cause')
+  ok(explainError('This version of Minecraft needs Java 21 or newer.')?.action === 'java', 'missing Java offers Java settings')
+  ok(explainError('Add an account before playing.')?.action === 'accounts', 'no account offers the account menu')
+}
+
+/** GamePaths without Electron: the same layout, rooted anywhere. */
+class FakeGamePaths {
+  constructor(public readonly root: string) {}
+  get versions(): string { return join(this.root, 'versions') }
+  versionDir(id: string): string { return join(this.versions, id) }
+  versionJar(id: string): string { return join(this.versionDir(id), `${id}.jar`) }
+  versionJson(id: string): string { return join(this.versionDir(id), `${id}.json`) }
+  get libraries(): string { return join(this.root, 'libraries') }
+  library(path: string): string { return join(this.libraries, path) }
+  get assets(): string { return join(this.root, 'assets') }
+  assetIndex(id: string): string { return join(this.assets, 'indexes', `${id}.json`) }
+  assetObject(hash: string): string { return join(this.assets, 'objects', hash.substring(0, 2), hash) }
+  get assetsVirtual(): string { return join(this.assets, 'virtual') }
+  nativesDir(versionId: string): string { return join(this.root, 'natives', versionId) }
+  get instances(): string { return join(this.root, 'instances') }
+  instanceDir(instanceId: string): string { return join(this.instances, instanceId) }
+}
+
 async function main(): Promise<void> {
   console.log('Openforge core verification')
   const fixture = await startFixtureServer()
@@ -458,6 +777,13 @@ async function main(): Promise<void> {
     await modrinthPackInstall(fixture)
     await curseForgePackInstall(fixture)
     await resourcePackWiring()
+    keyBindingSuite()
+    cleanupPlanningSuite()
+    await cleanupScanSuite()
+    stampSuite()
+    await stampedInstallSuite(fixture)
+    loaderProfileSuite()
+    tuningSuite()
     await liveConnectivity()
   } finally {
     fixture.server.close()
