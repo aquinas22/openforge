@@ -7,6 +7,12 @@ import { migrateLegacyUserData, removeLegacyAuthCredential } from './core/migrat
 
 app.setName('Openforge')
 
+// Development/demo only: OPENFORGE_USER_DATA points an unpackaged run at an
+// isolated data directory (used by scripts/screenshots.mjs so captures never
+// touch a real profile or account). Packaged builds ignore it entirely.
+const isolatedUserData = !app.isPackaged ? process.env['OPENFORGE_USER_DATA'] : undefined
+if (isolatedUserData) app.setPath('userData', isolatedUserData)
+
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
@@ -59,8 +65,11 @@ ipcMain.on(IPC.winClose, () => mainWindow?.close())
 app.whenReady().then(() => {
   app.setAppUserModelId('com.noahroe.openforge')
   // Must run before registerIpc(), which immediately reads settings/instances.
-  migrateLegacyUserData((msg) => console.log('[Openforge]', msg))
-  removeLegacyAuthCredential((msg) => console.log('[Openforge]', msg))
+  // An isolated data directory must never adopt legacy data from the real one.
+  if (!isolatedUserData) {
+    migrateLegacyUserData((msg) => console.log('[Openforge]', msg))
+    removeLegacyAuthCredential((msg) => console.log('[Openforge]', msg))
+  }
   registerIpc(() => mainWindow)
   createWindow()
 
