@@ -2,12 +2,13 @@ import { ChildProcess, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { delimiter } from 'node:path'
-import type { Settings } from '@shared/types'
+import type { LoaderType, Settings } from '@shared/types'
+import { tunedJvmArgs } from '../../shared/tuning'
 import type { LaunchAccount } from './accounts'
 import { GamePaths } from './paths'
 import { Argument, VersionDetail } from './manifest'
 import { isAllowed, mavenToPath } from './rules'
-import { selectLibraries } from './installer'
+import { selectLibraries, versionJarFor } from './installer'
 
 const LAUNCHER_NAME = 'Openforge'
 const LAUNCHER_VERSION = '2.0.0'
@@ -27,11 +28,34 @@ export interface LaunchOptions {
   settings: Settings
   ramMb: number
   javaPath: string
+  /** Major version of `javaPath`, which decides the GC defaults. */
+  javaMajor: number
+  /** The instance's loader; modded launches get a larger initial heap. */
+  loader: LoaderType
   /** Per-instance JVM flags, appended after the global ones. */
   extraJvmArgs?: string
   quickPlay?: QuickPlay
   onLog: (stream: 'stdout' | 'stderr', line: string) => void
   onExit: (code: number | null) => void
+  /** Coarse progress read from the game's own log: mods loading, then in game. */
+  onStage?: (stage: LaunchStage) => void
+}
+
+export type LaunchStage = 'loading' | 'ready'
+
+/**
+ * Log lines that mark how far a starting game has got. The game's own output
+ * is the only signal a launcher gets, and these lines are stable across
+ * vanilla, Fabric, Quilt, Forge and NeoForge.
+ */
+export function stageFromLogLine(line: string): LaunchStage | null {
+  if (/Sound engine started|SoundSystem started|OpenAL initialized|Created: \d+x\d+x\d+ minecraft:textures\/atlas/.test(line)) {
+    return 'ready'
+  }
+  if (/Loading \d+ mods|ModLauncher running|Launching target|Setting user:|Backend library: LWJGL/i.test(line)) {
+    return 'loading'
+  }
+  return null
 }
 
 export interface RunningGame {
@@ -57,8 +81,9 @@ function buildClasspath(paths: GamePaths, version: VersionDetail): string[] {
   // module name and causes duplicate net.minecraft packages.
   const hasProcessedMinecraftClient = classpath.some((lib) => lib.name.startsWith('net.minecraft:client:'))
   if (!hasProcessedMinecraftClient) {
-    // Vanilla client jar last so loader libraries take precedence.
-    entries.push(paths.versionJar(version.inheritsFrom ?? version.id))
+    // Client jar last so loader libraries take precedence. For modded versions
+    // this is the copy named after the loader version (see versionJarFor).
+    entries.push(versionJarFor(paths, version))
   }
   return entries
 }
@@ -146,8 +171,13 @@ export async function launchGame(opts: LaunchOptions): Promise<RunningGame> {
     is_quick_play_realms: quickPlay?.type === 'realms'
   }
 
-  const memArgs = [`-Xmx${opts.ramMb}M`, `-Xms${Math.min(opts.ramMb, 1024)}M`]
   const userJvm = [...splitArgs(settings.jvmArgs), ...splitArgs(opts.extraJvmArgs)]
+  const memArgs = tunedJvmArgs({
+    javaMajor: opts.javaMajor,
+    ramMb: opts.ramMb,
+    loader: opts.loader,
+    userArgs: userJvm.join(' ')
+  })
 
   let jvmArgs: string[]
   let gameArgs: string[]
@@ -194,9 +224,18 @@ export async function launchGame(opts: LaunchOptions): Promise<RunningGame> {
     windowsHide: false
   })
 
+  let stage: LaunchStage | null = null
   const rl = (buf: Buffer, stream: 'stdout' | 'stderr'): void => {
     for (const line of buf.toString('utf8').split(/\r?\n/)) {
-      if (line.length) opts.onLog(stream, line)
+      if (!line.length) continue
+      opts.onLog(stream, line)
+      if (stage !== 'ready' && opts.onStage) {
+        const next = stageFromLogLine(line)
+        if (next && next !== stage) {
+          stage = next
+          opts.onStage(next)
+        }
+      }
     }
   }
   child.stdout?.on('data', (d: Buffer) => rl(d, 'stdout'))

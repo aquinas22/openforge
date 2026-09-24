@@ -102,8 +102,9 @@ export async function discoverJava(preferred?: string, extraPaths: string[] = []
   const managed = new Set(extraPaths)
   const results: JavaInfo[] = []
   const seen = new Set<string>()
-  for (const path of candidates) {
-    const info = await probeJava(path)
+  // Each probe spawns `java -version` (100-400 ms). Run them side by side.
+  const probed = await Promise.all([...candidates].map(async (path) => [path, await probeJava(path)] as const))
+  for (const [path, info] of probed) {
     if (info && !seen.has(info.version + info.path)) {
       seen.add(info.version + info.path)
       results.push(managed.has(path) ? { ...info, managed: true, vendor: 'Eclipse Temurin' } : info)

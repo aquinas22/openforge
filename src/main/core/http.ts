@@ -19,6 +19,12 @@ export interface DownloadTask {
   headers?: Record<string, string>
   /** Mirrors tried in order when `url` fails. Modrinth packs list several. */
   mirrors?: string[]
+  /**
+   * Accept an existing file on size alone instead of re-hashing it. Safe
+   * because every download lands via a verified `.part` rename, so a file that
+   * exists was complete and correct when written. Repair turns this off.
+   */
+  trustExisting?: boolean
 }
 
 /** An HTTP request that returned a non-2xx status. Carries the code so callers
@@ -149,6 +155,7 @@ async function hashFile(path: string, algorithm: 'sha1' | 'sha256' | 'sha512'): 
 /** True when the file exists and (if a hash/size is known) already matches. */
 async function isValid(task: DownloadTask): Promise<boolean> {
   if (!existsSync(task.dest)) return false
+  if (task.trustExisting) return !task.size || statSync(task.dest).size === task.size
   if (task.sha512) return (await hashFile(task.dest, 'sha512')) === task.sha512.toLowerCase()
   if (task.sha256) return (await hashFile(task.dest, 'sha256')) === task.sha256.toLowerCase()
   if (task.sha1) return (await hashFile(task.dest, 'sha1')) === task.sha1.toLowerCase()

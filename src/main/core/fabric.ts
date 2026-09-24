@@ -59,6 +59,12 @@ export async function installFabricLike(
   loaderVersion?: string
 ): Promise<string> {
   let loader = loaderVersion
+  // Profiles are immutable per loader+game version, so a saved one is reusable
+  // without asking the meta service again.
+  if (loader) {
+    const knownId = `${flavour}-loader-${loader}-${mcVersion}`
+    if (existsSync(paths.versionJson(knownId))) return knownId
+  }
   if (!loader) {
     const versions = await getFabricLikeVersions(flavour, mcVersion)
     const stable = versions.find((v) => v.stable) ?? versions[0]
