@@ -7,7 +7,7 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 
 /** Sent on every outbound request. Modrinth's API requires an identifying agent. */
-export const USER_AGENT = 'Openforge/2.0.0 (github.com/noahroe/openforge)'
+export const USER_AGENT = 'Openforge/2.1.0 (github.com/aquinas22/openforge)'
 
 export interface DownloadTask {
   url: string

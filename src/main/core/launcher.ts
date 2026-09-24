@@ -11,7 +11,7 @@ import { isAllowed, mavenToPath } from './rules'
 import { selectLibraries, versionJarFor } from './installer'
 
 const LAUNCHER_NAME = 'Openforge'
-const LAUNCHER_VERSION = '2.0.0'
+const LAUNCHER_VERSION = '2.1.0'
 
 /** Jump straight into a world or server instead of the main menu. */
 export interface QuickPlay {

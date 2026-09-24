@@ -1,7 +1,7 @@
 {
   "name": "openforge",
-  "version": "2.0.0",
-  "description": "Openforge — the 2026 Minecraft launcher: Modrinth + CurseForge modpacks, texture packs, shaders, managed Java, and real Microsoft sign-in.",
+  "version": "2.1.0",
+  "description": "Openforge — a Minecraft launcher for Windows: Modrinth + CurseForge modpacks, texture packs, shaders, managed Java, and real Microsoft sign-in.",
   "author": "Noah Roe",
   "license": "MIT",
   "main": "./out/main/index.js",
