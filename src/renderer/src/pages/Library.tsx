@@ -70,6 +70,7 @@ function PlayControl({ inst, big }: { inst: Instance; big?: boolean }): JSX.Elem
 
 function Hero({ inst }: { inst: Instance }): JSX.Element {
   const openConsole = useStore((s) => s.openConsole)
+  const openDetail = useStore((s) => s.openDetail)
   const running = useStore((s) => !!s.running[inst.id])
   return (
     <div
@@ -124,9 +125,17 @@ function Hero({ inst }: { inst: Instance }): JSX.Element {
         </div>
         <div className="row" style={{ gap: 12 }}>
           <PlayControl inst={inst} big />
+          <button className="btn" onClick={() => openDetail(inst.id)}>
+            Customize profile
+          </button>
           <button className="btn ghost" onClick={() => openConsole(inst.id)}>
             View log
           </button>
+          {!running && (
+            <span className="kbd-hint" aria-hidden="true">
+              <kbd>Ctrl</kbd> + <kbd>Enter</kbd> to play
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -154,6 +163,7 @@ function InstanceCard({
   return (
     <div
       className={`panel card-instance ${view}`}
+      title={`Customize ${inst.name}`}
       style={{ overflow: 'hidden', cursor: 'pointer' }}
       onClick={() => openDetail(inst.id)}
     >
@@ -171,7 +181,7 @@ function InstanceCard({
             Running
           </span>
         )}
-        {inst.loaderPending && (
+        {inst.loaderPending && !st.running && (
           <span className="chip warn" style={{ position: 'absolute', top: 8, right: 8 }}>
             Loader pending
           </span>
@@ -194,7 +204,12 @@ function InstanceCard({
           {inst.name}
         </div>
         <div className="card-instance-meta muted">
-          {inst.mcVersion} · {inst.installed ? `played ${timeAgo(inst.lastPlayed)}` : 'not installed'}
+          {inst.mcVersion} ·{' '}
+          {!inst.installed
+            ? 'not installed'
+            : inst.lastPlayed
+              ? `played ${timeAgo(inst.lastPlayed)} · ${playtime(inst.totalPlaySeconds)}`
+              : 'ready, never played'}
         </div>
         {st.busy ? (
           <div className="dock-bar" style={{ height: 6 }}>
@@ -235,29 +250,6 @@ export function Library({ onNew }: { onNew: () => void }): JSX.Element {
     localStorage.setItem('openforge:favorites', JSON.stringify(favorites))
   }, [favorites])
 
-  if (instances.length === 0) {
-    return (
-      <div className="page">
-        <div className="empty empty-showcase">
-          <div className="empty-art" aria-hidden="true" />
-          <h2 style={{ fontSize: 24, marginBottom: 8 }}>Your library is empty</h2>
-          <p style={{ maxWidth: 460, margin: '0 auto 22px' }}>
-            Build an instance on any loader, or install a modpack from Modrinth or CurseForge.
-            Openforge fetches the Java each pack needs, so there is nothing to set up first.
-          </p>
-          <div className="row" style={{ justifyContent: 'center', gap: 12 }}>
-            <button className="btn primary" onClick={onNew}>
-              <Plus size={16} /> New instance
-            </button>
-            <button className="btn" onClick={() => setRoute('discover')}>
-              <Sparkles size={16} /> Browse modpacks
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   const sorted = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
     return [...instances]
@@ -281,6 +273,31 @@ export function Library({ onNew }: { onNew: () => void }): JSX.Element {
         )
       })
   }, [favorites, instances, loader, query, sort])
+
+  // After every hook: returning earlier changes the hook count once the
+  // first instance appears, which React treats as a crash.
+  if (instances.length === 0) {
+    return (
+      <div className="page">
+        <div className="empty empty-showcase">
+          <div className="empty-art" aria-hidden="true" />
+          <h2 style={{ fontSize: 24, marginBottom: 8 }}>Your library is empty</h2>
+          <p style={{ maxWidth: 460, margin: '0 auto 22px' }}>
+            Build an instance on any loader, or install a modpack from Modrinth or CurseForge.
+            Openforge fetches the Java each pack needs, so there is nothing to set up first.
+          </p>
+          <div className="row" style={{ justifyContent: 'center', gap: 12 }}>
+            <button className="btn primary" onClick={onNew}>
+              <Plus size={16} /> New instance
+            </button>
+            <button className="btn" onClick={() => setRoute('discover')}>
+              <Sparkles size={16} /> Browse modpacks
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const recent = [...instances].sort(
     (a, b) =>
@@ -354,6 +371,7 @@ export function Library({ onNew }: { onNew: () => void }): JSX.Element {
           <option value="fabric">Fabric</option>
           <option value="forge">Forge</option>
           <option value="neoforge">NeoForge</option>
+          <option value="quilt">Quilt</option>
         </select>
         <select
           className="select compact-select"

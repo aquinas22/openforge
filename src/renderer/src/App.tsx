@@ -217,6 +217,51 @@ function AccountModal({ onClose }: { onClose: () => void }): JSX.Element {
   )
 }
 
+const SHORTCUTS: [keys: string[], action: string][] = [
+  [['Ctrl', 'Enter'], 'Play the most recent profile'],
+  [['Ctrl', '1'], 'Library'],
+  [['Ctrl', '2'], 'Discover'],
+  [['Ctrl', '3'], 'Settings'],
+  [['Ctrl', 'K'], 'Search Discover'],
+  [['Ctrl', 'N'], 'New instance'],
+  [['Ctrl', 'L'], 'Show or hide the game console'],
+  [['?'], 'Show these shortcuts'],
+  [['Esc'], 'Close the open panel']
+]
+
+function ShortcutsModal({ onClose }: { onClose: () => void }): JSX.Element {
+  return (
+    <div className="scrim" onClick={onClose}>
+      <div className="modal shortcuts-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Keyboard shortcuts">
+        <div className="between" style={{ marginBottom: 16 }}>
+          <div>
+            <div className="eyebrow">Keyboard</div>
+            <h2 style={{ fontSize: 20 }}>Shortcuts</h2>
+          </div>
+          <button className="win-btn" onClick={onClose} aria-label="Close shortcuts">
+            <X size={18} />
+          </button>
+        </div>
+        <dl className="shortcut-list">
+          {SHORTCUTS.map(([keys, action]) => (
+            <div key={action}>
+              <dt>
+                {keys.map((key, i) => (
+                  <span key={key}>
+                    {i > 0 && ' + '}
+                    <kbd>{key}</kbd>
+                  </span>
+                ))}
+              </dt>
+              <dd>{action}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </div>
+  )
+}
+
 function BootSplash({ leaving }: { leaving: boolean }): JSX.Element {
   return (
     <div className={`boot-splash${leaving ? ' leaving' : ''}`} role="status" aria-label="Openforge is starting">
@@ -248,8 +293,11 @@ export default function App(): JSX.Element {
   const setRoute = useStore((s) => s.setRoute)
   const openDetail = useStore((s) => s.openDetail)
   const openConsole = useStore((s) => s.openConsole)
+  const accountOpen = useStore((s) => s.accountsOpen)
+  const setAccountOpen = useStore((s) => s.setAccountsOpen)
+  const shortcutsOpen = useStore((s) => s.shortcutsOpen)
+  const setShortcutsOpen = useStore((s) => s.setShortcutsOpen)
   const [newOpen, setNewOpen] = useState(false)
-  const [accountOpen, setAccountOpen] = useState(false)
   const [showSplash, setShowSplash] = useState(true)
   const [splashLeaving, setSplashLeaving] = useState(false)
 
@@ -271,7 +319,7 @@ export default function App(): JSX.Element {
   // rather than at the moment someone presses Play.
   useEffect(() => {
     if (ready && accounts.length === 0) setAccountOpen(true)
-  }, [ready, accounts.length])
+  }, [ready, accounts.length, setAccountOpen])
 
   // The theme lives on the root element; every token cascades from there.
   useEffect(() => {
@@ -290,11 +338,40 @@ export default function App(): JSX.Element {
       if (event.key === 'Escape') {
         setNewOpen(false)
         setAccountOpen(false)
+        setShortcutsOpen(false)
         openDetail(null)
         openConsole(null)
         return
       }
+      if (event.key === '?' && !isTyping && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault()
+        setShortcutsOpen(true)
+        return
+      }
       if (!(event.ctrlKey || event.metaKey)) return
+
+      const state = useStore.getState()
+      if (event.key === 'Enter' && !isTyping) {
+        // Play whatever was played last, the way the Library hero suggests.
+        const recent = [...state.instances].sort(
+          (a, b) =>
+            new Date(b.lastPlayed ?? b.createdAt).getTime() - new Date(a.lastPlayed ?? a.createdAt).getTime()
+        )[0]
+        if (recent && !state.running[recent.id] && !state.busy[recent.id]) {
+          event.preventDefault()
+          state.launch(recent.id)
+        }
+        return
+      }
+      if (event.key.toLowerCase() === 'l' && !isTyping) {
+        event.preventDefault()
+        const active =
+          Object.keys(state.busy).find((id) => state.busy[id]) ??
+          Object.keys(state.running).find((id) => state.running[id]) ??
+          state.detailInstance
+        openConsole(state.consoleFor ? null : active ?? null)
+        return
+      }
 
       if (event.key === '1' || event.key === '2' || event.key === '3') {
         event.preventDefault()
@@ -311,7 +388,7 @@ export default function App(): JSX.Element {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [openConsole, openDetail, setRoute])
+  }, [openConsole, openDetail, setRoute, setAccountOpen, setShortcutsOpen])
 
   return (
     <>
@@ -341,6 +418,7 @@ export default function App(): JSX.Element {
 
       {newOpen && <NewInstanceModal onClose={() => setNewOpen(false)} />}
       {accountOpen && <AccountModal onClose={() => setAccountOpen(false)} />}
+      {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
       <InstanceDetail />
       <Toasts />
       {showSplash && <BootSplash leaving={splashLeaving} />}

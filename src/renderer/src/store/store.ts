@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type {
   AccountSummary,
+  ContentKind,
   DeviceCodePrompt,
   Instance,
   JavaInfo,
@@ -12,15 +13,28 @@ import type {
   VersionSummary
 } from '@shared/types'
 import type { AuthEvent, CreateInstanceInput, PackInstallInput, ProviderStatus, QuickPlayInput } from '@shared/ipc'
+import { explainError, FIX_LABEL, type FixAction } from '@shared/errors'
 import { api } from '../api'
 import { cleanError } from '../util'
 
 export type Route = 'library' | 'discover' | 'settings'
+export type DetailTab = 'overview' | 'content' | 'setup' | 'worlds' | 'manage'
 
 export interface Toast {
   id: number
   kind: 'info' | 'success' | 'error'
   message: string
+  /** Bold first line, used for errors that come with a separate fix. */
+  title?: string
+  action?: { label: string; fix: FixAction; instanceId?: string }
+}
+
+export interface ToastOptions {
+  title?: string
+  action?: Toast['action']
+  /** Explain the message and offer a fix button when a known cause matches. */
+  explain?: boolean
+  instanceId?: string
 }
 
 interface State {
@@ -43,6 +57,11 @@ interface State {
 
   consoleFor: string | null
   detailInstance: string | null
+  /** Which drawer tab to show when the detail opens. */
+  detailTab: DetailTab
+  accountsOpen: boolean
+  shortcutsOpen: boolean
+  browseTarget: { instanceId: string; kind: ContentKind } | null
   toasts: Toast[]
 
   /** Live Microsoft sign-in, while the user finishes it in a browser. */
@@ -51,8 +70,13 @@ interface State {
 
   init(): Promise<void>
   setRoute(r: Route): void
-  toast(message: string, kind?: Toast['kind']): void
+  toast(message: string, kind?: Toast['kind'], options?: ToastOptions): void
   dismissToast(id: number): void
+  /** Carry out the fix offered on an error toast. */
+  runFix(fix: FixAction, instanceId?: string): void
+  setAccountsOpen(open: boolean): void
+  setShortcutsOpen(open: boolean): void
+  setDetailTab(tab: DetailTab): void
 
   refreshInstances(): Promise<void>
   refreshAccounts(): Promise<void>
@@ -77,7 +101,8 @@ interface State {
   updatePack(id: string): Promise<void>
 
   openConsole(id: string | null): void
-  openDetail(id: string | null): void
+  openDetail(id: string | null, tab?: DetailTab): void
+  browseFor(instanceId: string, kind: ContentKind): void
 }
 
 let toastSeq = 1
@@ -101,6 +126,10 @@ export const useStore = create<State>((set, get) => ({
   logs: {},
   consoleFor: null,
   detailInstance: null,
+  detailTab: 'overview',
+  accountsOpen: false,
+  shortcutsOpen: false,
+  browseTarget: null,
   toasts: [],
   authPrompt: null,
   authBusy: false,
@@ -124,7 +153,12 @@ export const useStore = create<State>((set, get) => ({
         }
         return { progress: { ...s.progress, [e.instanceId]: e }, busy, running }
       })
-      if (e.phase === 'error') get().toast(e.detail || e.label, 'error')
+      if (e.phase === 'error') {
+        const fixed = e.action
+          ? { title: e.label, action: { label: fixLabel(e.action), fix: e.action, instanceId: e.instanceId } }
+          : { title: e.label, explain: true, instanceId: e.instanceId }
+        get().toast(e.detail || e.label, 'error', e.detail ? fixed : { explain: true, instanceId: e.instanceId })
+      }
       if (e.phase === 'done' || e.phase === 'error') get().refreshInstances()
     })
 
@@ -168,12 +202,56 @@ export const useStore = create<State>((set, get) => ({
       .catch(() => undefined)
   },
 
-  setRoute: (route) => set({ route }),
-  toast: (message, kind = 'info') => {
+  setRoute: (route) => set({ route, browseTarget: null }),
+  toast: (message, kind = 'info', options = {}) => {
+    // The same failure often arrives twice (progress event + rejected call).
+    if (get().toasts.some((t) => t.message === message && t.kind === kind)) return
     const id = toastSeq++
-    set((s) => ({ toasts: [...s.toasts, { id, kind, message }] }))
-    setTimeout(() => get().dismissToast(id), 6200)
+    let action = options.action
+    let title = options.title
+    let body = message
+    if (!action && options.explain && kind === 'error') {
+      const hint = explainError(message)
+      if (hint) {
+        title = title ?? message
+        body = hint.fix
+        if (hint.action) action = { label: hint.actionLabel ?? fixLabel(hint.action), fix: hint.action, instanceId: options.instanceId }
+      }
+    }
+    set((s) => ({ toasts: [...s.toasts.slice(-3), { id, kind, message: body, title, action }] }))
+    // Errors with a fix stay long enough to act on.
+    setTimeout(() => get().dismissToast(id), action ? 12000 : kind === 'error' ? 9000 : 5200)
   },
+  runFix: (fix, instanceId) => {
+    const s = get()
+    switch (fix) {
+      case 'java':
+      case 'network':
+        set({ route: 'settings', detailInstance: null, browseTarget: null })
+        break
+      case 'accounts':
+        set({ accountsOpen: true })
+        break
+      case 'repair':
+        if (instanceId) s.repair(instanceId)
+        break
+      case 'console':
+        if (instanceId) set({ consoleFor: instanceId })
+        break
+      case 'memory':
+        if (instanceId) set({ detailInstance: instanceId, detailTab: 'overview' })
+        break
+      case 'jvm':
+        if (instanceId) set({ detailInstance: instanceId, detailTab: 'manage' })
+        break
+      case 'content':
+        if (instanceId) set({ detailInstance: instanceId, detailTab: 'content' })
+        break
+    }
+  },
+  setAccountsOpen: (open) => set({ accountsOpen: open }),
+  setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
+  setDetailTab: (tab) => set({ detailTab: tab }),
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
   async refreshInstances() {
@@ -240,16 +318,20 @@ export const useStore = create<State>((set, get) => ({
     await get().refreshInstances()
   },
   async launch(id, quickPlay) {
-    const res = await api.launchInstance(id, quickPlay)
-    if (!res.ok && res.error) get().toast(res.error, 'error')
-    else get().toast('Launching Minecraft…', 'success')
+    try {
+      const res = await api.launchInstance(id, quickPlay)
+      // Failures reported through a progress event already have a toast.
+      if (!res.ok && res.error && !res.handled) get().toast(res.error, 'error', { explain: true, instanceId: id })
+    } catch (e) {
+      get().toast(cleanError(e), 'error', { explain: true, instanceId: id })
+    }
   },
   async install(id) {
     try {
       await api.installInstance(id)
       get().toast('Instance ready to play', 'success')
     } catch (e) {
-      get().toast(cleanError(e), 'error')
+      get().toast(cleanError(e), 'error', { explain: true, instanceId: id })
     }
     get().refreshInstances()
   },
@@ -258,7 +340,7 @@ export const useStore = create<State>((set, get) => ({
       await api.repairInstance(id)
       get().toast('Files verified and repaired', 'success')
     } catch (e) {
-      get().toast(cleanError(e), 'error')
+      get().toast(cleanError(e), 'error', { explain: true, instanceId: id })
     }
     get().refreshInstances()
   },
@@ -299,8 +381,13 @@ export const useStore = create<State>((set, get) => ({
   },
 
   openConsole: (id) => set({ consoleFor: id }),
-  openDetail: (id) => set({ detailInstance: id })
+  openDetail: (id, tab) => set((s) => ({ detailInstance: id, detailTab: tab ?? (id === s.detailInstance ? s.detailTab : 'overview') })),
+  browseFor: (instanceId, kind) => set({ route: 'discover', detailInstance: null, browseTarget: { instanceId, kind } })
 }))
+
+function fixLabel(fix: FixAction): string {
+  return FIX_LABEL[fix]
+}
 
 /** The account the game will launch with, if any. */
 export function activeAccount(accounts: AccountSummary[]): AccountSummary | null {

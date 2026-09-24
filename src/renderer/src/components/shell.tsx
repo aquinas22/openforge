@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react'
-import { Minus, Square, Terminal, X, Loader2, CircleStop, Plus } from 'lucide-react'
+import { Minus, Square, Terminal, X, Loader2, CircleStop, Plus, Check, Keyboard } from 'lucide-react'
+import { LAUNCH_STEPS, type LaunchStep } from '@shared/types'
 import { useShallow } from 'zustand/react/shallow'
 import { api } from '../api'
 import { useStore, type Route } from '../store/store'
 import { Avatar, Logo, Sprite, sprites } from './bits'
 
 export function TitleBar(): JSX.Element {
+  const setShortcutsOpen = useStore((s) => s.setShortcutsOpen)
   return (
     <div className="titlebar">
       <div className="brand row">
@@ -15,6 +17,9 @@ export function TitleBar(): JSX.Element {
       </div>
       <div className="spacer" />
       <div className="win-controls">
+        <button className="win-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}>
+          <Keyboard size={15} />
+        </button>
         <button className="win-btn" title="Minimize" onClick={() => api.minimizeWindow()}>
           <Minus size={15} />
         </button>
@@ -121,7 +126,8 @@ export function Dock(): JSX.Element | null {
 
   const busyId = Object.keys(busy).find((id) => busy[id])
   const runningIds = Object.keys(running).filter((id) => running[id])
-  const nameOf = (id: string): string => instances.find((i) => i.id === id)?.name ?? 'Instance'
+  const nameOf = (id: string): string =>
+    id === 'java' ? 'Java runtime' : instances.find((i) => i.id === id)?.name ?? 'Instance'
 
   if (!busyId && runningIds.length === 0) return null
 
@@ -132,18 +138,20 @@ export function Dock(): JSX.Element | null {
     return (
       <div className="dock">
         <Loader2 size={18} className="spin" style={{ color: 'var(--vein)' }} />
-        <div style={{ minWidth: 220 }}>
+        <div className="dock-copy">
           <div style={{ fontWeight: 600, fontSize: 13 }}>
             {nameOf(busyId)} · <span className="muted">{p?.label ?? 'Working'}</span>
           </div>
-          <div className="muted" style={{ fontSize: 11.5 }}>
-            {p?.detail ?? ''}
+          <div className="muted dock-detail">{p?.detail ?? ''}</div>
+        </div>
+        {p?.step ? (
+          <LaunchSteps step={p.step} />
+        ) : (
+          <div className={`dock-bar${indeterminate ? ' indeterminate' : ''}`}>
+            <span style={{ width: `${pct}%` }} />
           </div>
-        </div>
-        <div className={`dock-bar${indeterminate ? ' indeterminate' : ''}`}>
-          <span style={{ width: `${pct}%` }} />
-        </div>
-        {!indeterminate && (
+        )}
+        {!indeterminate && !p?.step && (
           <span className="muted" style={{ fontVariantNumeric: 'tabular-nums' }}>
             {pct}%
           </span>
@@ -156,14 +164,17 @@ export function Dock(): JSX.Element | null {
   }
 
   const id = runningIds[0]
+  const p = progress[id]
+  const starting = p?.step && p.step !== 'ready'
   return (
     <div className="dock">
       <span className="chip accent">
-        <span style={{ width: 8, height: 8, background: 'var(--vein)' }} />
-        Running
+        <span className={`live-dot${starting ? ' pulsing' : ''}`} />
+        {starting ? p?.label ?? 'Starting' : 'Playing'}
       </span>
       <div style={{ fontWeight: 600 }}>{nameOf(id)}</div>
       {runningIds.length > 1 && <span className="muted">+{runningIds.length - 1} more</span>}
+      {starting && p?.step && <LaunchSteps step={p.step} />}
       <div className="spacer" style={{ flex: 1 }} />
       <button className="btn sm ghost" onClick={() => openConsole(consoleFor ? null : id)}>
         <Terminal size={15} /> Console
@@ -172,6 +183,24 @@ export function Dock(): JSX.Element | null {
         <CircleStop size={15} /> Stop
       </button>
     </div>
+  )
+}
+
+/** The launch sequence as a row of small steps: done, current, and to come. */
+export function LaunchSteps({ step }: { step: LaunchStep }): JSX.Element {
+  const current = LAUNCH_STEPS.findIndex((entry) => entry.key === step)
+  return (
+    <ol className="launch-steps" aria-label="Launch progress">
+      {LAUNCH_STEPS.map((entry, index) => {
+        const state = index < current ? 'done' : index === current ? 'current' : 'todo'
+        return (
+          <li key={entry.key} className={state} aria-current={state === 'current' ? 'step' : undefined}>
+            <i>{state === 'done' ? <Check size={10} strokeWidth={3} /> : null}</i>
+            <span>{entry.label}</span>
+          </li>
+        )
+      })}
+    </ol>
   )
 }
 
@@ -220,8 +249,9 @@ export function Console(): JSX.Element | null {
 export function Toasts(): JSX.Element {
   const toasts = useStore((s) => s.toasts)
   const dismiss = useStore((s) => s.dismissToast)
+  const runFix = useStore((s) => s.runFix)
   return (
-    <div className="toast-wrap">
+    <div className="toast-wrap" role="status" aria-live="polite">
       {toasts.map((t) => (
         <div key={t.id} className={`toast ${t.kind}`} onClick={() => dismiss(t.id)}>
           <span
@@ -234,7 +264,22 @@ export function Toasts(): JSX.Element {
                 t.kind === 'error' ? '#fff' : t.kind === 'success' ? 'var(--vein)' : 'var(--dim)'
             }}
           />
-          <div style={{ fontSize: 13 }}>{t.message}</div>
+          <div className="toast-body">
+            {t.title && <strong>{t.title}</strong>}
+            <div>{t.message}</div>
+            {t.action && (
+              <button
+                className="btn sm toast-action"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  dismiss(t.id)
+                  runFix(t.action!.fix, t.action!.instanceId)
+                }}
+              >
+                {t.action.label}
+              </button>
+            )}
+          </div>
         </div>
       ))}
     </div>

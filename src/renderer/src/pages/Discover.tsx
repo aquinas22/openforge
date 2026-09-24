@@ -10,6 +10,7 @@ import {
   Search,
   Sparkles,
   TriangleAlert,
+  ArrowLeft,
   X
 } from 'lucide-react'
 import { api } from '../api'
@@ -114,10 +115,12 @@ function ProjectCard({
 function ProjectDrawer({
   project,
   kind,
+  preferredTarget,
   onClose
 }: {
   project: ContentProject
   kind: ContentKind
+  preferredTarget?: string
   onClose: () => void
 }): JSX.Element {
   const [versions, setVersions] = useState<ContentVersion[] | null>(null)
@@ -129,7 +132,7 @@ function ProjectDrawer({
   const toast = useStore((s) => s.toast)
 
   // Installing a mod or texture pack needs somewhere to put it.
-  const [target, setTarget] = useState<string>(instances[0]?.id ?? '')
+  const [target, setTarget] = useState<string>(preferredTarget && instances.some((i) => i.id === preferredTarget) ? preferredTarget : instances[0]?.id ?? '')
   const isPack = kind === 'modpack'
 
   useEffect(() => {
@@ -313,12 +316,17 @@ export function Discover(): JSX.Element {
   const defaultProvider = useStore((s) => s.settings?.defaultProvider)
   const versionsList = useStore((s) => s.versions)
   const importPack = useStore((s) => s.importPack)
+  const browseTarget = useStore((s) => s.browseTarget)
+  const instances = useStore((s) => s.instances)
+  const setRoute = useStore((s) => s.setRoute)
+  const openDetail = useStore((s) => s.openDetail)
+  const targetInstance = instances.find((instance) => instance.id === browseTarget?.instanceId)
 
   const [provider, setProvider] = useState<Provider>(defaultProvider ?? 'modrinth')
-  const [kind, setKind] = useState<ContentKind>('modpack')
+  const [kind, setKind] = useState<ContentKind>(browseTarget?.kind ?? 'modpack')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<ContentSort>('popular')
-  const [gameVersion, setGameVersion] = useState('')
+  const [gameVersion, setGameVersion] = useState(targetInstance?.mcVersion ?? '')
   const [results, setResults] = useState<ContentProject[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
@@ -381,6 +389,19 @@ export function Discover(): JSX.Element {
           <Package size={15} /> Import a pack file
         </button>
       </div>
+
+      {targetInstance && (
+        <div className="browse-context panel">
+          <div>
+            <span className="eyebrow">Adding to profile</span>
+            <strong>{targetInstance.name}</strong>
+            <small>{targetInstance.mcVersion} · {targetInstance.loader}</small>
+          </div>
+          <button className="btn sm" onClick={() => { setRoute('library'); openDetail(targetInstance.id) }}>
+            <ArrowLeft size={14} /> Back to profile
+          </button>
+        </div>
+      )}
 
       <div className="kind-tabs" role="tablist" aria-label="Content type">
         {KINDS.map((entry) => (
@@ -486,6 +507,9 @@ export function Discover(): JSX.Element {
           aria-label="Minecraft version"
         >
           <option value="">Any version</option>
+          {gameVersion && !releaseVersions.includes(gameVersion) && (
+            <option value={gameVersion}>{gameVersion}</option>
+          )}
           {releaseVersions.map((v) => (
             <option key={v} value={v}>
               {v}
@@ -587,7 +611,7 @@ export function Discover(): JSX.Element {
         </>
       )}
 
-      {selected && <ProjectDrawer project={selected} kind={kind} onClose={() => setSelected(null)} />}
+      {selected && <ProjectDrawer project={selected} kind={kind} preferredTarget={browseTarget?.instanceId} onClose={() => setSelected(null)} />}
     </div>
   )
 }
