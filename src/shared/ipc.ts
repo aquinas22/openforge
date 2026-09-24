@@ -1,5 +1,9 @@
 import type {
   AccountSummary,
+  CleanupPlan,
+  CleanupResult,
+  ConfigFileEntry,
+  KeyBindingReport,
   ContentKind,
   ContentProject,
   ContentSearchResult,
@@ -65,6 +69,8 @@ export interface QuickPlayInput {
 export interface LaunchResult {
   ok: boolean
   error?: string
+  /** The error was already reported through a progress event; do not toast it twice. */
+  handled?: boolean
 }
 
 export interface ProviderStatus {
@@ -115,9 +121,22 @@ export interface OpenforgeApi {
   repairInstance(id: string): Promise<Instance>
   launchInstance(id: string, quickPlay?: QuickPlayInput): Promise<LaunchResult>
   killInstance(id: string): Promise<void>
-  openInstanceFolder(id: string): Promise<void>
+  /** Open the instance folder, or one of its well-known subfolders. */
+  openInstanceFolder(id: string, sub?: InstanceSubfolder): Promise<void>
   listWorlds(id: string): Promise<WorldSummary[]>
   backupWorld(id: string, folderName: string): Promise<string | null>
+
+  // -- Key bindings, mod configs, cleanup -------------------------------------
+  listKeyBindings(id: string): Promise<KeyBindingReport>
+  /** Reset the given binding ids, or every binding when `ids` is null. */
+  resetKeyBindings(id: string, ids: string[] | null): Promise<KeyBindingReport>
+  openOptionsFile(id: string): Promise<void>
+  listConfigFiles(id: string): Promise<ConfigFileEntry[]>
+  /** Open a config file in the system editor, or reveal it in its folder. */
+  openConfigFile(id: string, relPath: string, reveal?: boolean): Promise<void>
+  planCleanup(id: string): Promise<CleanupPlan>
+  /** Move the chosen plan items to the system trash. Never deletes outright. */
+  runCleanup(id: string, relPaths: string[]): Promise<CleanupResult>
 
   // -- Packs ------------------------------------------------------------------
   installPack(input: PackInstallInput): Promise<Instance>
@@ -158,6 +177,8 @@ export interface OpenforgeApi {
   onAuthEvent(cb: (e: AuthEvent) => void): () => void
 }
 
+export type InstanceSubfolder = 'mods' | 'config' | 'resourcepacks' | 'shaderpacks' | 'saves' | 'logs' | 'crash-reports'
+
 export type AuthEvent =
   | { kind: 'prompt'; prompt: DeviceCodePrompt }
   | { kind: 'success'; username: string }
@@ -197,6 +218,14 @@ export const IPC = {
   openInstanceFolder: 'instance:openFolder',
   listWorlds: 'instance:worlds',
   backupWorld: 'instance:backupWorld',
+
+  listKeyBindings: 'instance:keybinds',
+  resetKeyBindings: 'instance:keybindsReset',
+  openOptionsFile: 'instance:openOptions',
+  listConfigFiles: 'instance:configs',
+  openConfigFile: 'instance:openConfig',
+  planCleanup: 'instance:cleanupPlan',
+  runCleanup: 'instance:cleanupRun',
 
   installPack: 'pack:install',
   importPack: 'pack:import',

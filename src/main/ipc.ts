@@ -1,14 +1,17 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { existsSync, readdirSync } from 'node:fs'
 import { arch, totalmem } from 'node:os'
-import { cp, mkdir, rm } from 'node:fs/promises'
-import { basename } from 'node:path'
+import { copyFile, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { basename, join, resolve as resolvePath, sep } from 'node:path'
 import type {
+  CleanupResult,
   ContentKind,
   Instance,
   InstalledMod,
   JavaInfo,
   JavaRuntimeStatus,
+  LaunchStep,
   LoaderType,
   LogLine,
   NetworkCheck,
@@ -22,12 +25,15 @@ import type {
   ContentSearchInput,
   CreateInstanceInput,
   InstallContentInput,
+  InstanceSubfolder,
   LaunchResult,
   PackInstallInput,
   PackUpdateInfo,
   ProviderStatus,
   QuickPlayInput
 } from '@shared/ipc'
+import { diagnoseCrash, type FixAction } from '@shared/errors'
+import { recommendedRamMb } from '@shared/tuning'
 import { GamePaths } from './core/paths'
 import { loadInstances, loadLegacyUsername, loadSettings, saveInstances, saveSettings } from './core/store'
 import { AccountStore } from './core/accounts'
@@ -41,7 +47,17 @@ import {
   SUPPORTED_MAJORS
 } from './core/javaprovision'
 import { fetchVersionManifest } from './core/manifest'
-import { installVersion, prepareNatives, resolveVersion, Reporter } from './core/installer'
+import {
+  ensureVersionJar,
+  installVersion,
+  isVersionReady,
+  prepareNatives,
+  resolveVersion,
+  Reporter,
+  VerifyMode
+} from './core/installer'
+import { readKeyBindings, resetKeyBindings } from './core/options'
+import { installedModIds, listConfigFiles, planCleanup } from './core/cleanup'
 import { getFabricLikeVersions, installFabricLike } from './core/fabric'
 import { getForgeVersions, getNeoForgeVersions, installForgeLike } from './core/forge'
 import { launchGame, RunningGame } from './core/launcher'
@@ -96,15 +112,24 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   const send = (channel: string, payload: unknown): void => {
     getWindow()?.webContents.send(channel, payload)
   }
+  const sendProgress = (evt: ProgressEvent): void => send(IPC.progressEvent, evt)
+  /** A reporter for installs; during a launch, `step` tags events for the step indicator. */
   const reporterFor =
-    (instanceId: string): Reporter =>
-    (phase, label, progress, detail) => {
-      const evt: ProgressEvent = { instanceId, phase, label, progress, detail }
-      send(IPC.progressEvent, evt)
-    }
+    (instanceId: string, step?: LaunchStep): Reporter =>
+    (phase, label, progress, detail) =>
+      sendProgress({ instanceId, phase, label, progress, detail, step: phase === 'done' ? undefined : step })
+
+  // The tail of each game's output, kept for crash diagnosis.
+  const recentLog = new Map<string, string[]>()
   const logFor = (instanceId: string, stream: LogLine['stream'], line: string): void => {
     const evt: LogLine = { instanceId, stream, line, ts: Date.now() }
     send(IPC.logEvent, evt)
+    if (stream !== 'system') {
+      const tail = recentLog.get(instanceId) ?? []
+      tail.push(line)
+      if (tail.length > 400) tail.splice(0, tail.length - 400)
+      recentLog.set(instanceId, tail)
+    }
   }
 
   const persist = (): void => saveInstances(instances)
@@ -114,6 +139,37 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     return inst
   }
   const instanceDirOf = (id: string): string => paths().instanceDir(id)
+
+  /** Resolve a path inside an instance, refusing anything that escapes it. */
+  const insideInstance = (id: string, relPath: string): string => {
+    const root = resolvePath(instanceDirOf(id))
+    const target = resolvePath(root, ...String(relPath).split(/[\\/]+/))
+    if (target === root || !target.startsWith(root + sep)) throw new Error('That path is outside the instance.')
+    return target
+  }
+  const modCountOf = (id: string): number => {
+    try {
+      return readdirSync(join(instanceDirOf(id), 'mods')).filter((name) => /\.jar$/i.test(name)).length
+    } catch {
+      return 0
+    }
+  }
+  /**
+   * The heap a launch gets: the profile's own setting, or for modded profiles
+   * left on automatic, whichever is larger of the global default and what the
+   * pack size and this machine's RAM suggest.
+   */
+  const effectiveRam = (inst: Instance): number => {
+    if (inst.ramMb) return clampRam(inst.ramMb)
+    if (inst.loader === 'vanilla') return clampRam(settings.ramMb)
+    const recommended = recommendedRamMb({
+      totalMemoryMb,
+      maxRamMb,
+      loader: inst.loader,
+      modCount: modCountOf(inst.id)
+    })
+    return clampRam(Math.max(settings.ramMb, recommended))
+  }
 
   /** A file name that cannot escape the folder it belongs to. */
   const safeFileName = (name: string): string => {
@@ -137,6 +193,11 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
    * machine has nothing suitable. This is the step that used to send new
    * players away to install a JDK before they could play anything.
    */
+  // Discovery spawns `java -version` for every candidate. Remember the answer
+  // per required major for the session, so a warm launch probes nothing.
+  const javaCache = new Map<number, JavaInfo>()
+  const forgetJava = (): void => javaCache.clear()
+
   async function resolveJava(
     requiredMajor: number,
     instance: Instance | null,
@@ -145,14 +206,35 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     if (instance?.javaPath) {
       const explicit = await probeJava(instance.javaPath)
       if (explicit) return explicit
+      logFor(instance.id, 'system', `[Openforge] Java override ${instance.javaPath} did not run; using automatic Java.`)
+    }
+    const cached = javaCache.get(requiredMajor)
+    if (cached && existsSync(cached.path)) return cached
+
+    // Minecraft up to 1.16 (and every LaunchWrapper-era Forge) breaks on Java 9+,
+    // so with managed Java on, only an exact Java 8 is acceptable.
+    const strictLegacy = requiredMajor <= 8 && settings.autoJava
+    const accept = (list: JavaInfo[]): JavaInfo | null =>
+      strictLegacy ? list.find((java) => java.majorVersion === 8) ?? null : pickJava(list, requiredMajor)
+
+    // Managed runtimes first: probing two or three known paths is quick.
+    const managed = (await Promise.all((await managedJavaPaths()).map((path) => probeJava(path)))).filter(
+      (java): java is JavaInfo => Boolean(java)
+    )
+    const exactManaged = managed.find((java) => java.majorVersion === requiredMajor)
+    let picked: JavaInfo | null = exactManaged ? { ...exactManaged, managed: true } : null
+    if (!picked) {
+      const found = await discoverJava(settings.javaPath, await managedJavaPaths())
+      picked = accept(found)
+    }
+    if (!picked && settings.autoJava) {
+      picked = await ensureRuntime(paths(), provisionableMajor(requiredMajor), report)
+    }
+    if (picked) {
+      javaCache.set(requiredMajor, picked)
+      return picked
     }
     const found = await discoverJava(settings.javaPath, await managedJavaPaths())
-    const picked = pickJava(found, requiredMajor)
-    if (picked) return picked
-
-    if (settings.autoJava) {
-      return ensureRuntime(paths(), provisionableMajor(requiredMajor), report)
-    }
     const have = found.length
       ? `Found only Java ${found.map((j) => j.majorVersion).join(', ')}.`
       : 'No Java runtime was found on this machine.'
@@ -169,7 +251,8 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     loader: LoaderType,
     mcVersion: string,
     loaderVersion: string | undefined,
-    report: Reporter
+    report: Reporter,
+    mode: VerifyMode = 'quick'
   ): Promise<string> => {
     const p = paths()
     if (loader === 'fabric' || loader === 'quilt') {
@@ -187,16 +270,35 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
         version: loaderVersion,
         javaPath: java.path,
         report,
-        onLog: (line) => logFor(inst.id, 'system', line)
+        onLog: (line) => logFor(inst.id, 'system', line),
+        concurrency: concurrency(),
+        mode
       })
     }
     return mcVersion
   }
 
+  // One install or launch per instance at a time; double-clicking Play must
+  // not start two installers writing the same files.
+  const installing = new Set<string>()
+  const launching = new Set<string>()
+  const userStopped = new Set<string>()
+
   /** Full install of an instance: pack files, loader, then the game itself. */
-  async function doInstall(inst: Instance): Promise<Instance> {
+  async function doInstall(inst: Instance, mode: VerifyMode = 'quick'): Promise<Instance> {
+    if (installing.has(inst.id)) throw new Error('This instance is already being installed.')
+    installing.add(inst.id)
+    try {
+      return await installSteps(inst, mode)
+    } finally {
+      installing.delete(inst.id)
+    }
+  }
+
+  async function installSteps(inst: Instance, mode: VerifyMode): Promise<Instance> {
     const report = reporterFor(inst.id)
     const p = paths()
+    const started = Date.now()
 
     try {
       if (inst.provider && inst.projectId && inst.versionId) {
@@ -220,15 +322,16 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
           ? `${result.manualDownloads.length} of ${result.totalFiles} files could not be downloaded automatically. ` +
             'Open the instance to get them.'
           : undefined
-        const versionId = await installLoader(inst, result.loader, result.mcVersion, result.loaderVersion, report)
-        await installVersion(p, versionId, report, concurrency())
+        const versionId = await installLoader(inst, result.loader, result.mcVersion, result.loaderVersion, report, mode)
+        await installVersion(p, versionId, report, concurrency(), mode)
         inst.launchVersion = versionId
         inst.loaderPending = false
       } else {
-        const versionId = await installLoader(inst, inst.loader, inst.mcVersion, inst.loaderVersion, report)
-        await installVersion(p, versionId, report, concurrency())
+        const versionId = await installLoader(inst, inst.loader, inst.mcVersion, inst.loaderVersion, report, mode)
+        await installVersion(p, versionId, report, concurrency(), mode)
         inst.launchVersion = versionId
       }
+      logFor(inst.id, 'system', `[Openforge] Install finished in ${((Date.now() - started) / 1000).toFixed(1)}s.`)
 
       // Provision the runtime now, so the first Play is instant rather than a
       // surprise 50 MB download.
@@ -259,6 +362,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   }))
   ipcMain.handle(IPC.saveSettings, (_e, patch: Partial<Settings>) => {
     const previousProxy = settings.proxyUrl
+    if (patch.javaPath !== undefined || patch.autoJava !== undefined || patch.gameDir !== undefined) forgetJava()
     settings = { ...settings, ...patch }
     settings.ramMb = clampRam(settings.ramMb)
     saveSettings(settings)
@@ -364,10 +468,14 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       return { majorVersion: major, installed: Boolean(hit), path: hit?.path, usedFor }
     })
   })
-  ipcMain.handle(IPC.installJavaRuntime, (_e, major: number) =>
-    ensureRuntime(paths(), major, reporterFor('java'))
-  )
-  ipcMain.handle(IPC.removeJavaRuntime, (_e, major: number) => removeRuntime(paths(), major))
+  ipcMain.handle(IPC.installJavaRuntime, async (_e, major: number) => {
+    forgetJava()
+    return ensureRuntime(paths(), major, reporterFor('java'))
+  })
+  ipcMain.handle(IPC.removeJavaRuntime, async (_e, major: number) => {
+    forgetJava()
+    return removeRuntime(paths(), major)
+  })
 
   // -- Versions / loaders -----------------------------------------------------
   ipcMain.handle(IPC.listVersions, async () => {
@@ -408,8 +516,18 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   })
   ipcMain.handle(IPC.updateInstance, (_e, id: string, patch: Partial<Instance>) => {
     const inst = findInstance(id)
-    if (typeof patch.ramMb === 'number') patch.ramMb = clampRam(patch.ramMb)
-    Object.assign(inst, patch)
+    if (patch.name !== undefined) {
+      const name = patch.name.trim()
+      if (!name || name.length > 80) throw new Error('Profile name must be 1–80 characters.')
+      inst.name = name
+    }
+    // 0 means "automatic": drop the override so the recommendation applies.
+    if (typeof patch.ramMb === 'number') {
+      if (patch.ramMb <= 0) delete inst.ramMb
+      else inst.ramMb = clampRam(patch.ramMb)
+    }
+    if (patch.jvmArgs !== undefined) inst.jvmArgs = patch.jvmArgs
+    if (patch.javaPath !== undefined) inst.javaPath = patch.javaPath
     persist()
     return inst
   })
@@ -418,7 +536,15 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     running.delete(id)
     instances = instances.filter((i) => i.id !== id)
     persist()
-    await rm(instanceDirOf(id), { recursive: true, force: true }).catch(() => undefined)
+    // Worlds live in here. Prefer the Recycle Bin so a mis-click is recoverable;
+    // fall back to deleting only when the OS refuses (e.g. a folder too big for it).
+    const dir = instanceDirOf(id)
+    if (!existsSync(dir)) return
+    try {
+      await shell.trashItem(dir)
+    } catch {
+      await rm(dir, { recursive: true, force: true }).catch(() => undefined)
+    }
   })
   ipcMain.handle(IPC.duplicateInstance, async (_e, id: string) => {
     const source = findInstance(id)
@@ -440,14 +566,18 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.installInstance, (_e, id: string) => doInstall(findInstance(id)))
   ipcMain.handle(IPC.repairInstance, async (_e, id: string) => {
     const inst = findInstance(id)
+    if (running.has(id)) throw new Error('Stop the game before repairing its files.')
     inst.installed = false
     persist()
-    return doInstall(inst)
+    // Repair re-hashes everything instead of trusting the install stamps.
+    return doInstall(inst, 'full')
   })
-  ipcMain.handle(IPC.openInstanceFolder, async (_e, id: string) => {
-    const dir = instanceDirOf(id)
+  const SUBFOLDERS: InstanceSubfolder[] = ['mods', 'config', 'resourcepacks', 'shaderpacks', 'saves', 'logs', 'crash-reports']
+  ipcMain.handle(IPC.openInstanceFolder, async (_e, id: string, sub?: InstanceSubfolder) => {
+    const dir = sub && SUBFOLDERS.includes(sub) ? join(instanceDirOf(id), sub) : instanceDirOf(id)
     await mkdir(dir, { recursive: true })
-    await shell.openPath(dir)
+    const error = await shell.openPath(dir)
+    if (error) throw new Error(error)
   })
   ipcMain.handle(IPC.listWorlds, (_e, id: string) => listWorlds(instanceDirOf(id)))
   ipcMain.handle(IPC.backupWorld, async (_e, id: string, folderName: string) =>
@@ -460,22 +590,20 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     async (_e, id: string, quickPlay?: QuickPlayInput): Promise<LaunchResult> => {
       let inst = findInstance(id)
       const report = reporterFor(id)
+      if (running.has(id)) return { ok: false, error: 'This instance is already running.' }
+      if (launching.has(id) || installing.has(id)) return { ok: false, error: 'This instance is already starting.' }
+      launching.add(id)
+      const step = (s: LaunchStep, label: string, detail?: string): void =>
+        sendProgress({ instanceId: id, phase: 'launching', label, progress: -1, detail, step: s })
       try {
-        if (running.has(id)) return { ok: false, error: 'This instance is already running.' }
         if (!inst.installed) inst = await doInstall(inst)
-
+        const started = Date.now()
         const p = paths()
-        report('launching', 'Preparing launch', -1)
 
         if (settings.launchMode === 'official') {
           const versionId = inst.launchVersion ?? inst.mcVersion
           report('launching', 'Syncing with Minecraft Launcher', -1)
-          await registerOfficialProfile(
-            p,
-            { ...inst, ramMb: clampRam(inst.ramMb ?? settings.ramMb) },
-            settings,
-            versionId
-          )
+          await registerOfficialProfile(p, { ...inst, ramMb: effectiveRam(inst) }, settings, versionId)
           await openOfficialLauncher()
           report('done', 'Minecraft Launcher opened', 1, `Choose "Openforge - ${inst.name}" and press Play.`)
           return { ok: true }
@@ -484,22 +612,40 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
         const active = accounts.active()
         if (!active) {
           const msg = 'Add an account before playing. Open the account menu to sign in or create an offline profile.'
-          report('error', 'No account selected', -1, msg)
-          return { ok: false, error: msg }
+          sendProgress({
+            instanceId: id,
+            phase: 'error',
+            label: 'No account selected',
+            progress: -1,
+            detail: msg,
+            action: 'accounts'
+          })
+          return { ok: false, error: msg, handled: true }
         }
 
-        const version = await resolveVersion(p, inst.launchVersion ?? inst.mcVersion)
-        report('natives', 'Checking LWJGL natives', -1)
+        // Warm path: when the install stamp still matches the disk, nothing
+        // below touches the network or hashes a file.
+        step('files', 'Checking game files')
+        const versionId = inst.launchVersion ?? inst.mcVersion
+        let version = await resolveVersion(p, versionId)
+        const ready = await isVersionReady(p, version)
+        if (!ready.fresh) {
+          logFor(id, 'system', `[Openforge] Refreshing game files (${ready.reason ?? 'not verified yet'}).`)
+          version = await installVersion(p, versionId, reporterFor(id, 'files'), concurrency(), 'quick')
+        }
+        await ensureVersionJar(p, version)
         const nativeCount = await prepareNatives(p, version)
         logFor(
           id,
           'system',
-          `[Openforge] Verified ${nativeCount} loadable LWJGL native files for ${process.platform}/${process.arch}.`
+          `[Openforge] ${nativeCount} LWJGL native files ready for ${process.platform}/${process.arch}.`
         )
 
-        const java = await resolveJava(version.javaVersion?.majorVersion ?? 8, inst, report)
+        step('java', 'Finding Java')
+        const java = await resolveJava(version.javaVersion?.majorVersion ?? 8, inst, reporterFor(id, 'java'))
         logFor(id, 'system', `[Openforge] Using Java ${java.majorVersion} at ${java.path}`)
 
+        step('account', active.kind === 'microsoft' ? 'Checking Microsoft session' : `Playing as ${active.username}`)
         const account = await accounts.resolveForLaunch(active.id, settings.msClientId)
         if (account.userType === 'legacy' && quickPlay?.type === 'multiplayer') {
           logFor(
@@ -509,8 +655,13 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
           )
         }
 
+        step('start', 'Starting Minecraft')
+        const ramMb = effectiveRam(inst)
         const startedAt = Date.now()
         const hideLauncher = settings.closeLauncherOnLaunch
+        const modded = inst.loader !== 'vanilla'
+        recentLog.delete(id)
+        userStopped.delete(id)
         const game = await launchGame({
           paths: p,
           version,
@@ -518,16 +669,45 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
           account,
           settings,
           javaPath: java.path,
-          ramMb: clampRam(inst.ramMb ?? settings.ramMb),
+          javaMajor: java.majorVersion,
+          loader: inst.loader,
+          ramMb,
           extraJvmArgs: inst.jvmArgs,
           quickPlay,
           onLog: (stream, line) => logFor(id, stream, line),
+          onStage: (stage) =>
+            sendProgress({
+              instanceId: id,
+              phase: 'running',
+              label: stage === 'ready' ? 'Playing' : modded ? 'Loading mods' : 'Loading Minecraft',
+              progress: stage === 'ready' ? 1 : -1,
+              step: stage === 'ready' ? 'ready' : 'loading'
+            }),
           onExit: (code) => {
             running.delete(id)
             const played = Math.round((Date.now() - startedAt) / 1000)
             inst.totalPlaySeconds = (inst.totalPlaySeconds ?? 0) + played
             persist()
-            report('done', code === 0 ? 'Game closed' : `Game exited (code ${code})`, 1)
+            const stopped = userStopped.delete(id)
+            if (code === 0 || stopped) {
+              report(
+                'done',
+                stopped ? 'Game stopped' : 'Game closed',
+                1,
+                `Played ${Math.max(1, Math.round(played / 60))} min`
+              )
+            } else {
+              const diagnosis = diagnoseCrash(recentLog.get(id) ?? [])
+              const action: FixAction = diagnosis?.action ?? 'console'
+              sendProgress({
+                instanceId: id,
+                phase: 'error',
+                label: diagnosis?.title ?? `Minecraft closed unexpectedly (code ${code})`,
+                progress: -1,
+                detail: diagnosis?.fix ?? 'Open the console to see the last lines the game printed.',
+                action
+              })
+            }
             if (hideLauncher) {
               getWindow()?.show()
               getWindow()?.focus()
@@ -537,21 +717,120 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
         running.set(id, game)
         inst.lastPlayed = new Date().toISOString()
         persist()
-        report('running', 'Game running', 1, `pid ${game.pid}`)
+        const prepMs = Date.now() - started
+        logFor(
+          id,
+          'system',
+          `[Openforge] ${ready.fresh ? 'Warm launch' : 'Launch'} prepared in ${prepMs} ms, ` +
+            `${(ramMb / 1024).toFixed(1)} GB heap, pid ${game.pid}.`
+        )
+        sendProgress({
+          instanceId: id,
+          phase: 'running',
+          label: 'Starting Minecraft',
+          progress: -1,
+          detail: `Ready in ${(prepMs / 1000).toFixed(1)}s`,
+          step: 'start'
+        })
         if (hideLauncher) getWindow()?.hide()
         return { ok: true }
       } catch (err) {
         const message =
           err instanceof TlsInterceptionError ? err.message : (err as Error).message
         report('error', 'Launch failed', -1, message)
-        return { ok: false, error: message }
+        return { ok: false, error: message, handled: true }
+      } finally {
+        launching.delete(id)
       }
     }
   )
 
   ipcMain.handle(IPC.killInstance, (_e, id: string) => {
+    if (running.has(id)) userStopped.add(id)
     running.get(id)?.kill()
     running.delete(id)
+  })
+
+  // -- Key bindings, mod configs, cleanup ----------------------------------------
+  const optionsPathOf = (id: string): string => join(instanceDirOf(id), 'options.txt')
+  const readOptions = async (id: string): Promise<string | null> =>
+    readFile(optionsPathOf(id), 'utf8').catch(() => null)
+  const refuseWhileRunning = (id: string, what: string): void => {
+    if (running.has(id) || launching.has(id)) {
+      throw new Error(`Close Minecraft before ${what}. The game rewrites these files when it exits.`)
+    }
+  }
+
+  ipcMain.handle(IPC.listKeyBindings, async (_e, id: string) => {
+    findInstance(id)
+    return readKeyBindings(await readOptions(id))
+  })
+  ipcMain.handle(IPC.resetKeyBindings, async (_e, id: string, ids: string[] | null) => {
+    findInstance(id)
+    refuseWhileRunning(id, 'resetting key bindings')
+    const text = await readOptions(id)
+    if (text === null) throw new Error('This profile has no options.txt yet. Start the game once to create it.')
+    // Keep one backup of the file as it was before the latest reset.
+    await copyFile(optionsPathOf(id), `${optionsPathOf(id)}.openforge-backup`).catch(() => undefined)
+    const next = resetKeyBindings(text, Array.isArray(ids) ? ids.map(String) : null)
+    await writeFile(optionsPathOf(id), next, 'utf8')
+    return readKeyBindings(next)
+  })
+  ipcMain.handle(IPC.openOptionsFile, async (_e, id: string) => {
+    findInstance(id)
+    if (!existsSync(optionsPathOf(id))) {
+      throw new Error('This profile has no options.txt yet. Start the game once to create it.')
+    }
+    const error = await shell.openPath(optionsPathOf(id))
+    if (error) throw new Error(error)
+  })
+  ipcMain.handle(IPC.listConfigFiles, async (_e, id: string) => {
+    const inst = findInstance(id)
+    const dir = instanceDirOf(id)
+    const ids = inst.loader === 'vanilla' ? null : await installedModIds(dir)
+    return listConfigFiles(dir, ids && ids.length ? ids : null)
+  })
+  ipcMain.handle(IPC.openConfigFile, async (_e, id: string, relPath: string, reveal?: boolean) => {
+    findInstance(id)
+    if (!/^(config|defaultconfigs)\//.test(String(relPath))) {
+      throw new Error('Only files under config/ can be opened here.')
+    }
+    const target = insideInstance(id, relPath)
+    if (!existsSync(target)) throw new Error('That config file no longer exists.')
+    if (reveal) {
+      shell.showItemInFolder(target)
+      return
+    }
+    const error = await shell.openPath(target)
+    if (error) throw new Error(`${error} Use "Show in folder" to pick an editor.`)
+  })
+  ipcMain.handle(IPC.planCleanup, async (_e, id: string) => {
+    const inst = findInstance(id)
+    return planCleanup(instanceDirOf(id), inst.loader !== 'vanilla')
+  })
+  ipcMain.handle(IPC.runCleanup, async (_e, id: string, relPaths: string[]): Promise<CleanupResult> => {
+    const inst = findInstance(id)
+    refuseWhileRunning(id, 'cleaning up')
+    // Only what a fresh plan still lists may go: the renderer cannot name
+    // arbitrary paths, and anything that changed since the preview is skipped.
+    const plan = await planCleanup(instanceDirOf(id), inst.loader !== 'vanilla')
+    const allowed = new Map(plan.items.map((item) => [item.relPath, item]))
+    const result: CleanupResult = { trashed: [], failed: [], bytes: 0 }
+    for (const relPath of Array.isArray(relPaths) ? relPaths.map(String) : []) {
+      const item = allowed.get(relPath)
+      if (!item) {
+        result.failed.push({ relPath, error: 'No longer part of the cleanup plan.' })
+        continue
+      }
+      try {
+        await shell.trashItem(insideInstance(id, relPath))
+        result.trashed.push(relPath)
+        result.bytes += item.bytes
+      } catch (err) {
+        result.failed.push({ relPath, error: (err as Error).message })
+      }
+    }
+    return result
   })
 
   // -- Packs ------------------------------------------------------------------

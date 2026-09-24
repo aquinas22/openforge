@@ -1,5 +1,7 @@
 // Shared types used across the main process, preload bridge, and renderer.
 
+import type { FixAction } from './errors'
+
 export type LoaderType = 'vanilla' | 'fabric' | 'forge' | 'neoforge' | 'quilt'
 
 export const LOADERS: LoaderType[] = ['vanilla', 'fabric', 'forge', 'neoforge', 'quilt']
@@ -280,6 +282,90 @@ export interface ProgressEvent {
   /** 0..1 for the current phase, or -1 for indeterminate. */
   progress: number
   detail?: string
+  /** Where a launch has got to, for the step indicator. Unset during installs. */
+  step?: LaunchStep
+  /** For errors: the fix the UI should offer. */
+  action?: FixAction
+}
+
+/** The launch sequence as the player sees it. */
+export type LaunchStep = 'files' | 'java' | 'account' | 'start' | 'loading' | 'ready'
+
+export const LAUNCH_STEPS: { key: LaunchStep; label: string }[] = [
+  { key: 'files', label: 'Files' },
+  { key: 'java', label: 'Java' },
+  { key: 'account', label: 'Account' },
+  { key: 'start', label: 'Start' },
+  { key: 'loading', label: 'Loading' },
+  { key: 'ready', label: 'Playing' }
+]
+
+// -- Key bindings, configs, cleanup ---------------------------------------------
+
+export interface KeyBinding {
+  /** Binding id without the `key_` prefix, e.g. "key.jump". */
+  id: string
+  label: string
+  /** Vanilla group ("Movement") or the mod namespace ("jei"). */
+  category: string
+  vanilla: boolean
+  /** Raw key token as stored in options.txt. */
+  key: string
+  keyLabel: string
+  /** Forge/NeoForge modifier: SHIFT, CONTROL or ALT. */
+  modifier?: string
+  defaultKey?: string
+  defaultLabel?: string
+  isDefault: boolean
+  conflict: boolean
+}
+
+export interface KeyConflict {
+  key: string
+  keyLabel: string
+  ids: string[]
+}
+
+export interface KeyBindingReport {
+  /** False until the game has been started once and written options.txt. */
+  exists: boolean
+  /** Pre-1.13 numeric key codes. */
+  legacy: boolean
+  bindings: KeyBinding[]
+  conflicts: KeyConflict[]
+}
+
+export interface ConfigFileEntry {
+  /** Path relative to the instance folder, always with forward slashes. */
+  relPath: string
+  size: number
+  modified: number
+  /** The mod this config most likely belongs to. */
+  owner: string
+  /** No installed mod matches the owner. */
+  orphan: boolean
+}
+
+export interface CleanupItem {
+  relPath: string
+  label: string
+  reason: string
+  category: 'logs' | 'crash' | 'cache' | 'orphan-config'
+  bytes: number
+  files: number
+  /** Pre-selected in the preview. Heuristic finds are never pre-selected. */
+  recommended: boolean
+}
+
+export interface CleanupPlan {
+  items: CleanupItem[]
+  totalBytes: number
+}
+
+export interface CleanupResult {
+  trashed: string[]
+  failed: { relPath: string; error: string }[]
+  bytes: number
 }
 
 export interface LogLine {

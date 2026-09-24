@@ -40,9 +40,17 @@ const api: OpenforgeApi = {
   repairInstance: (id) => ipcRenderer.invoke(IPC.repairInstance, id),
   launchInstance: (id, quickPlay) => ipcRenderer.invoke(IPC.launchInstance, id, quickPlay),
   killInstance: (id) => ipcRenderer.invoke(IPC.killInstance, id),
-  openInstanceFolder: (id) => ipcRenderer.invoke(IPC.openInstanceFolder, id),
+  openInstanceFolder: (id, sub) => ipcRenderer.invoke(IPC.openInstanceFolder, id, sub),
   listWorlds: (id) => ipcRenderer.invoke(IPC.listWorlds, id),
   backupWorld: (id, folderName) => ipcRenderer.invoke(IPC.backupWorld, id, folderName),
+
+  listKeyBindings: (id) => ipcRenderer.invoke(IPC.listKeyBindings, id),
+  resetKeyBindings: (id, ids) => ipcRenderer.invoke(IPC.resetKeyBindings, id, ids),
+  openOptionsFile: (id) => ipcRenderer.invoke(IPC.openOptionsFile, id),
+  listConfigFiles: (id) => ipcRenderer.invoke(IPC.listConfigFiles, id),
+  openConfigFile: (id, relPath, reveal) => ipcRenderer.invoke(IPC.openConfigFile, id, relPath, reveal),
+  planCleanup: (id) => ipcRenderer.invoke(IPC.planCleanup, id),
+  runCleanup: (id, relPaths) => ipcRenderer.invoke(IPC.runCleanup, id, relPaths),
 
   installPack: (input) => ipcRenderer.invoke(IPC.installPack, input),
   importPack: () => ipcRenderer.invoke(IPC.importPack),
