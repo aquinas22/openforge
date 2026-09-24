@@ -75,7 +75,8 @@ export interface LaunchResult {
 
 export interface ProviderStatus {
   modrinth: boolean
-  curseforge: { available: boolean; mode: 'proxy' | 'direct' | 'none'; bulk: boolean }
+  /** Only the mode crosses to the renderer - never a key. 'builtin' = the key this release ships with. */
+  curseforge: { available: boolean; mode: 'proxy' | 'direct' | 'builtin' | 'none'; bulk: boolean }
 }
 
 export interface PackUpdateInfo {

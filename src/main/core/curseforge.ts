@@ -7,12 +7,14 @@ import type {
   LoaderType
 } from '@shared/types'
 import { getJson, HttpError, postJson } from './http'
+import { resolveCfCredentials, type CfMode } from './keyblob'
 
 /**
  * CurseForge access with two interchangeable transports:
  *  - proxy: talks to a servercraft-style server that holds the API key
  *    server-side (recommended - no key shipped in the desktop app);
- *  - direct: talks to api.curseforge.com with a user-supplied key.
+ *  - direct: talks to api.curseforge.com with the user's own key, or with the
+ *    key a release build ships with ('builtin' mode).
  *
  * Direct mode also unlocks the bulk endpoints, which matter enormously: a pack
  * like All the Mods lists 400+ files, and resolving those one request at a time
@@ -54,26 +56,28 @@ const MOD_LOADER_TYPE: Record<string, number> = {
 export class CfClient {
   private readonly proxyUrl: string
   private readonly apiKey: string
+  readonly mode: CfMode
 
-  constructor(proxyUrl: string, apiKey: string) {
-    // Trim both: a pasted key with a trailing space/newline produces a malformed
-    // `x-api-key` header (403), and a whitespace-only proxy URL would otherwise
-    // look "set" and silently win over direct-key mode.
-    this.proxyUrl = (proxyUrl ?? '').trim().replace(/\/$/, '')
-    this.apiKey = (apiKey ?? '').trim()
+  /**
+   * Priority: the user's proxy, then the user's own key, then the key this
+   * build ships with (see builtinkey.ts). Values are trimmed: a pasted key with
+   * a trailing space/newline produces a malformed `x-api-key` header (403), and
+   * a whitespace-only proxy URL would otherwise look "set" and silently win.
+   */
+  constructor(proxyUrl: string, apiKey: string, builtinKey = '') {
+    const resolved = resolveCfCredentials(proxyUrl, apiKey, builtinKey)
+    this.proxyUrl = resolved.proxyUrl
+    this.apiKey = resolved.apiKey
+    this.mode = resolved.mode
   }
 
   get available(): boolean {
-    return Boolean(this.proxyUrl || this.apiKey)
-  }
-
-  get mode(): 'proxy' | 'direct' | 'none' {
-    return this.proxyUrl ? 'proxy' : this.apiKey ? 'direct' : 'none'
+    return this.mode !== 'none'
   }
 
   /** Bulk resolution needs the real API; the proxy exposes no such route. */
   get supportsBulk(): boolean {
-    return this.mode === 'direct'
+    return this.mode === 'direct' || this.mode === 'builtin'
   }
 
   private get useProxy(): boolean {
@@ -86,6 +90,12 @@ export class CfClient {
 
   private authError(err: unknown): Error {
     if (err instanceof HttpError && (err.status === 401 || err.status === 403)) {
+      if (this.mode === 'builtin') {
+        return new Error(
+          `CurseForge rejected the built-in key (HTTP ${err.status}). It may have been revoked - ` +
+            'paste your own free key from console.curseforge.com in Settings -> Content providers.'
+        )
+      }
       return new Error(
         `CurseForge rejected the request (HTTP ${err.status}). Your API key is missing or invalid - ` +
           'check it in Settings -> Content providers. Get a free key at console.curseforge.com.'

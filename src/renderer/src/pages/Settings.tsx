@@ -17,6 +17,7 @@ import {
   TriangleAlert,
   User
 } from 'lucide-react'
+import type { ProviderStatus } from '@shared/ipc'
 import { api } from '../api'
 import { useStore } from '../store/store'
 import type {
@@ -62,6 +63,19 @@ function Section({
 
 function Toggle({ on, onClick }: { on: boolean; onClick: () => void }): JSX.Element {
   return <button className={`toggle${on ? ' on' : ''}`} onClick={onClick} aria-pressed={on} />
+}
+
+function cfStatusText(cf: ProviderStatus['curseforge']): string {
+  switch (cf.mode) {
+    case 'builtin':
+      return 'Using the built-in key. Bulk resolution is available, so large packs install fast.'
+    case 'direct':
+      return 'Using your own key. Bulk resolution is available.'
+    case 'proxy':
+      return 'Connected through your proxy. Bulk resolution needs a direct key.'
+    default:
+      return 'Not configured - CurseForge browsing is unavailable. Modrinth still works.'
+  }
 }
 
 export function Settings(): JSX.Element {
@@ -187,7 +201,9 @@ export function Settings(): JSX.Element {
             {(
               [
                 ['modrinth', 'Modrinth', 'Open API, no key, no setup. Carries Homestead and most modern packs.'],
-                ['curseforge', 'CurseForge', 'The largest catalogue, including All the Mods. Needs a key or a proxy.']
+                ['curseforge', 'CurseForge', providers.curseforge.mode === 'builtin'
+                  ? 'The largest catalogue, including All the Mods. Works out of the box.'
+                  : 'The largest catalogue, including All the Mods. Needs a key or a proxy.']
               ] as [Provider, string, string][]
             ).map(([id, title, detail]) => (
               <button
@@ -209,34 +225,33 @@ export function Settings(): JSX.Element {
         </div>
 
         <div className="field">
-          <label>CurseForge API key</label>
+          <label>Your own CurseForge API key (optional)</label>
           <input
             className="input"
             type="password"
-            placeholder="Paste your CurseForge API key"
+            placeholder={
+              providers.curseforge.mode === 'builtin'
+                ? 'Using the built-in key - paste your own to override it'
+                : 'Paste your CurseForge API key'
+            }
             value={form.cfApiKey}
             onChange={(e) => set('cfApiKey', e.target.value.trim())}
           />
           <div className="hint">
-            Free at console.curseforge.com. A direct key also unlocks bulk resolution, which is the
-            difference between a 400-mod pack installing in seconds and in minutes.
+            {providers.curseforge.mode === 'builtin'
+              ? 'Using the built-in key. CurseForge works with no setup; paste your own free key from console.curseforge.com if you would rather use yours.'
+              : 'Free at console.curseforge.com. A direct key also unlocks bulk resolution, which is the difference between a 400-mod pack installing in seconds and in minutes.'}
           </div>
         </div>
         <div className="field" style={{ marginBottom: 0 }}>
           <label>CurseForge proxy URL (optional)</label>
           <input
             className="input"
-            placeholder="Leave empty to use the API key"
+            placeholder="Leave empty to use an API key"
             value={form.cfProxyUrl}
             onChange={(e) => set('cfProxyUrl', e.target.value.trim())}
           />
-          <div className="hint">
-            {providers.curseforge.available
-              ? `Connected in ${providers.curseforge.mode} mode.${
-                  providers.curseforge.bulk ? ' Bulk resolution is available.' : ' Bulk resolution needs a direct key.'
-                }`
-              : 'Not configured — CurseForge browsing is unavailable. Modrinth still works.'}
-          </div>
+          <div className="hint">{cfStatusText(providers.curseforge)}</div>
         </div>
       </Section>
 

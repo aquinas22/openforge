@@ -62,6 +62,7 @@ import { getFabricLikeVersions, installFabricLike } from './core/fabric'
 import { getForgeVersions, getNeoForgeVersions, installForgeLike } from './core/forge'
 import { launchGame, RunningGame } from './core/launcher'
 import { CfClient } from './core/curseforge'
+import { builtinCfKey } from './core/builtinkey'
 import { ModrinthClient } from './core/modrinth'
 import { installPack, installPackFromFile, readPackIndex } from './core/packinstall'
 import {
@@ -104,7 +105,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   void applyProxySettings(settings.proxyUrl)
 
   const paths = (): GamePaths => new GamePaths(settings.gameDir)
-  const cfClient = (): CfClient => new CfClient(settings.cfProxyUrl, settings.cfApiKey)
+  const cfClient = (): CfClient => new CfClient(settings.cfProxyUrl, settings.cfApiKey, builtinCfKey())
   const modrinth = new ModrinthClient()
   const clients = (): { cf: CfClient; modrinth: ModrinthClient } => ({ cf: cfClient(), modrinth })
   const concurrency = (): number => Math.min(64, Math.max(1, settings.downloadConcurrency || 16))
@@ -376,26 +377,45 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       { name: 'Minecraft assets CDN', url: 'https://resources.download.minecraft.net/' },
       { name: 'Modrinth API', url: 'https://api.modrinth.com/v2/tag/loader' },
       { name: 'Modrinth CDN', url: 'https://cdn.modrinth.com/' },
-      { name: 'CurseForge CDN', url: 'https://mediafilez.forgecdn.net/' },
+      // The bucket root answers 403 by design (no listing); any HTTP answer means reachable.
+      { name: 'CurseForge CDN', url: 'https://mediafilez.forgecdn.net/', anyResponse: true },
       { name: 'Fabric meta', url: 'https://meta.fabricmc.net/v2/versions/game' },
       { name: 'NeoForge maven', url: 'https://maven.neoforged.net/releases/' },
       { name: 'Adoptium (Java)', url: 'https://api.adoptium.net/v3/info/available_releases' },
       { name: 'Microsoft sign-in', url: 'https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize' }
     ]
-    return Promise.all(
-      targets.map(async ({ name, url }) => {
+    const probes: Promise<NetworkCheck>[] = (targets as { name: string; url: string; anyResponse?: boolean }[]).map(
+      async ({ name, url, anyResponse }) => {
         const result = await probeUrl(url)
         return {
           name,
           url,
-          ok: result.ok,
+          ok: anyResponse ? result.status !== undefined : result.ok,
           status: result.status,
           error: result.error,
           // Name the failure mode the user can actually act on.
           tlsIntercepted: Boolean(result.error?.includes('trusted HTTPS connection'))
         }
-      })
+      }
     )
+    // Exercise the configured CurseForge credential (proxy, own key or built-in
+    // key) with one tiny search, so a rejected key is told apart from a network problem.
+    const cf = cfClient()
+    if (cf.available) {
+      probes.push(
+        cf.search({ pageSize: 1 }).then(
+          () => ({ name: `CurseForge API (${cf.mode})`, url: 'https://api.curseforge.com/v1/mods/search', ok: true, status: 200 }),
+          (err: Error) => ({
+            name: `CurseForge API (${cf.mode})`,
+            url: 'https://api.curseforge.com/v1/mods/search',
+            ok: false,
+            error: err.message,
+            tlsIntercepted: err.message.includes('trusted HTTPS connection')
+          })
+        )
+      )
+    }
+    return Promise.all(probes)
   })
 
   // -- Accounts ---------------------------------------------------------------

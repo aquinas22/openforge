@@ -23,6 +23,8 @@ import { offlineUuid, isValidUsername } from '../src/main/core/auth'
 import { mavenToPath, nativeClassifier, isAllowed, currentOsName } from '../src/main/core/rules'
 import { downloadFile } from '../src/main/core/http'
 import { CfClient, forgeCdnUrl, forgeCdnMirrors } from '../src/main/core/curseforge'
+import { decodeKeyBlob, encodeKeyBlob, resolveCfCredentials } from '../src/main/core/keyblob'
+import { builtinCfKey } from '../src/main/core/builtinkey'
 import { installMrpackArchive, installCurseForgeArchive, parseLoaderId, readPackIndex } from '../src/main/core/packinstall'
 import { enableResourcePacks, FOLDER } from '../src/main/core/content'
 import { pickJava } from '../src/main/core/java'
@@ -148,6 +150,32 @@ function pureAlgorithms(): void {
     'file id splits into the CDN path'
   )
   ok(forgeCdnMirrors(4567890, 'cool-mod.jar').length === 2, 'two fallback mirrors are offered')
+
+  section('CurseForge key priority and built-in key')
+  {
+    // Fake keys only: nothing here resembles a real CurseForge key.
+    const fakeKey = '$2a$10$FAKEfakeFAKEfakeFAKEfakeFAKEfakeFAKEfakeFAKEfake1234'
+    const blob = encodeKeyBlob(fakeKey)
+    ok(decodeKeyBlob(blob) === fakeKey, 'encode/decode round trip restores the key')
+    ok(!blob.includes(fakeKey) && !Buffer.from(blob, 'base64').toString('latin1').includes(fakeKey), 'blob does not contain the key in plain text')
+    ok(encodeKeyBlob(fakeKey) !== blob, 'each build gets a fresh random pad')
+    ok(decodeKeyBlob(encodeKeyBlob('ünïcødé-key')) === 'ünïcødé-key', 'non-ASCII survives the round trip')
+    ok(encodeKeyBlob('') === '' && decodeKeyBlob('') === '', 'no key encodes to an empty blob')
+    ok(decodeKeyBlob('QUJD') === '', 'a malformed blob decodes to no key rather than garbage')
+    ok(builtinCfKey() === '', 'a build without OPENFORGE_CF_KEY has no built-in key')
+
+    ok(resolveCfCredentials('https://proxy.example/', 'mine', 'builtin').mode === 'proxy', 'proxy beats both keys')
+    ok(resolveCfCredentials('https://proxy.example/', 'mine', 'builtin').apiKey === '', 'proxy mode sends no key')
+    ok(resolveCfCredentials('', 'mine', 'builtin').apiKey === 'mine', "the user's own key beats the built-in key")
+    ok(resolveCfCredentials('', ' ', 'builtin').mode === 'builtin', 'built-in key used when no user key or proxy')
+    ok(resolveCfCredentials('  ', '', '').mode === 'none', 'nothing configured means none')
+
+    const builtinClient = new CfClient('', '', fakeKey)
+    ok(builtinClient.mode === 'builtin' && builtinClient.available, 'CfClient reports builtin mode')
+    ok(builtinClient.supportsBulk, 'built-in key unlocks bulk resolution')
+    ok(new CfClient('', 'mine', fakeKey).mode === 'direct', "CfClient prefers the user's key")
+    ok(!new CfClient('', '', '').available, 'CfClient with nothing is unavailable')
+  }
 
   section('Java selection')
   const runtimes = [
@@ -456,10 +484,11 @@ async function liveConnectivity(): Promise<void> {
   for (const [name, url] of targets) {
     try {
       const res = await fetch(url, {
-        headers: { 'User-Agent': 'Openforge/2.0.0 verify' },
+        headers: { 'User-Agent': 'Openforge verify' },
         signal: AbortSignal.timeout(12_000)
       })
-      console.log(`  · ${name}: HTTP ${res.status}`)
+      const note = name === 'CurseForge CDN' && res.status === 403 ? ' (reachable; the bucket root refuses listing by design)' : ''
+      console.log(`  · ${name}: HTTP ${res.status}${note}`)
     } catch (err) {
       const cause = (err as { cause?: Error }).cause?.message ?? (err as Error).message
       console.log(`  · ${name}: unreachable — ${cause}`)

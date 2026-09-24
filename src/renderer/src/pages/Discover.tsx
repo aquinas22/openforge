@@ -448,11 +448,13 @@ export function Discover(): JSX.Element {
         >
           CurseForge
           <small>
-            {providers.curseforge.available
-              ? providers.curseforge.bulk
-                ? 'Direct key · fast installs'
-                : `Connected via ${providers.curseforge.mode}`
-              : 'Needs a key'}
+            {providers.curseforge.mode === 'builtin'
+              ? 'Ready · fast installs'
+              : providers.curseforge.mode === 'direct'
+                ? 'Your key · fast installs'
+                : providers.curseforge.mode === 'proxy'
+                  ? 'Connected via proxy'
+                  : 'Needs a key'}
           </small>
         </button>
       </div>
@@ -549,8 +551,9 @@ export function Discover(): JSX.Element {
           <div>
             <strong>CurseForge needs a key</strong>
             <span>
-              Add a free API key or a proxy URL in Settings. Modrinth works right now with no setup —
-              and carries most of the same packs, Homestead included.
+              This build has no built-in CurseForge key (builds from source leave it out). Add a free
+              key from console.curseforge.com or a proxy URL in Settings. Modrinth works right now with
+              no setup, and carries most of the same packs.
             </span>
           </div>
         </div>
