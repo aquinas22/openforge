@@ -3066,3 +3066,59 @@ kbd {
     display: none;
   }
 }
+
+/* -- Settings: auto-save indicator and the Advanced fold ------------------- */
+.save-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  font-size: 12px;
+  color: var(--muted);
+  transition: color 0.2s ease;
+}
+.save-indicator.saved {
+  color: var(--vein);
+}
+.save-indicator.error {
+  color: var(--danger);
+}
+.advanced {
+  margin-top: 4px;
+  border-top: 2px solid var(--rule);
+  padding-top: 10px;
+}
+.advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 2px;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+}
+.advanced-toggle span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.advanced-toggle strong {
+  font-size: 13px;
+}
+.advanced-toggle small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.advanced-chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+.advanced.open .advanced-chevron {
+  transform: rotate(90deg);
+  color: var(--vein);
+}
+.advanced-body {
+  padding: 14px 0 2px 25px;
+}

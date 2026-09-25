@@ -50,6 +50,7 @@ import { installerUrl, processorOutputs, resolveProfileValue } from '../src/main
 import { stageFromLogLine } from '../src/main/core/launcher'
 import { gcArgs, recommendedRamMb, tunedJvmArgs } from '../src/shared/tuning'
 import { diagnoseCrash, explainError } from '../src/shared/errors'
+import { applySettingsPatch, defaultSettings, effectiveProvider, migrateSettings, SETTINGS_VERSION } from '../src/shared/settings'
 
 let failures = 0
 let checks = 0
@@ -797,6 +798,71 @@ class FakeGamePaths {
   instanceDir(instanceId: string): string { return join(this.instances, instanceId) }
 }
 
+// -- Settings schema and migrations ------------------------------------------------
+
+function settingsSuite(): void {
+  section('Settings defaults and migration')
+  const defaults = defaultSettings('C:/games/openforge')
+  ok(defaults.defaultProvider === 'curseforge', 'fresh installs default to CurseForge')
+  ok(defaults.settingsVersion === SETTINGS_VERSION, 'fresh installs carry the current schema version')
+
+  const fresh = migrateSettings(undefined, defaults)
+  ok(fresh.settings.defaultProvider === 'curseforge' && fresh.settings.gameDir === 'C:/games/openforge', 'no file yields defaults')
+
+  // A 2.1 file: no version, Modrinth chosen back when it was the default.
+  const legacy = {
+    gameDir: 'D:/mc',
+    ramMb: 6144,
+    theme: 'lux',
+    defaultProvider: 'modrinth',
+    launchMode: 'offline',
+    microsoftClientId: 'retired-id',
+    msClientId: 'abc',
+    somethingFromTheFuture: { keep: true }
+  }
+  const migrated = migrateSettings(legacy, defaults)
+  ok(migrated.migrated, 'an unversioned file is marked for rewrite')
+  ok(migrated.settings.defaultProvider === 'curseforge', 'existing users move to CurseForge once')
+  ok(migrated.settings.settingsVersion === SETTINGS_VERSION, 'version is bumped')
+  ok(migrated.settings.launchMode === 'direct', '1.x "offline" launch mode becomes "direct"')
+  ok(!('microsoftClientId' in migrated.settings), 'retired microsoftClientId key is dropped')
+  ok(migrated.settings.msClientId === 'abc', 'msClientId survives for a later re-enable')
+  ok(migrated.settings.gameDir === 'D:/mc' && migrated.settings.ramMb === 6144 && migrated.settings.theme === 'lux', 'user values are kept')
+  ok(
+    (migrated.settings as unknown as Record<string, unknown>).somethingFromTheFuture !== undefined,
+    'unknown keys are carried through'
+  )
+  ok(migrated.settings.autoJava === true && migrated.settings.downloadConcurrency === 16, 'missing fields get defaults')
+
+  // After the change, an explicit Modrinth pick is remembered.
+  const chosen = migrateSettings({ ...migrated.settings, defaultProvider: 'modrinth' }, defaults)
+  ok(chosen.settings.defaultProvider === 'modrinth', 'a choice made after the migration sticks')
+  ok(!chosen.migrated, 'a current file is not rewritten')
+
+  const broken = migrateSettings(
+    { settingsVersion: 2, theme: 'neon', ramMb: 'lots', downloadConcurrency: 500, resolutionWidth: -5, autoJava: 'yes', uiStyle: 'classic' },
+    defaults
+  )
+  ok(broken.settings.theme === 'terra', 'an unknown theme falls back')
+  ok(broken.settings.ramMb === 4096, 'a non-numeric RAM value falls back')
+  ok(broken.settings.downloadConcurrency === 64, 'concurrency is clamped to 64')
+  ok(broken.settings.resolutionWidth === 320, 'window width is clamped')
+  ok(broken.settings.autoJava === true, 'a non-boolean toggle falls back')
+  ok(broken.settings.uiStyle === 'classic', 'valid values survive next to broken ones')
+  ok(migrateSettings('garbage', defaults).settings.defaultProvider === 'curseforge', 'a corrupt file yields defaults')
+
+  const patched = applySettingsPatch(migrated.settings, { theme: 'finis', settingsVersion: 1, cfApiKey: '  key \n' }, defaults)
+  ok(patched.theme === 'finis', 'a patch applies')
+  ok(patched.settingsVersion === SETTINGS_VERSION, 'the renderer cannot rewrite the schema version')
+  ok(patched.cfApiKey === 'key', 'pasted keys are trimmed')
+
+  section('Discover source')
+  ok(effectiveProvider('curseforge', true) === 'curseforge', 'CurseForge when a key is available')
+  ok(effectiveProvider('curseforge', false) === 'modrinth', 'Modrinth only while CurseForge is unavailable')
+  ok(effectiveProvider('modrinth', true) === 'modrinth', 'an explicit Modrinth choice is honoured')
+  ok(effectiveProvider(undefined, true) === 'curseforge', 'no saved value means CurseForge')
+}
+
 async function main(): Promise<void> {
   console.log('Openforge core verification')
   const fixture = await startFixtureServer()
@@ -813,6 +879,7 @@ async function main(): Promise<void> {
     await stampedInstallSuite(fixture)
     loaderProfileSuite()
     tuningSuite()
+    settingsSuite()
     await liveConnectivity()
   } finally {
     fixture.server.close()

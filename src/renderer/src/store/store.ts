@@ -62,6 +62,8 @@ interface State {
   accountsOpen: boolean
   shortcutsOpen: boolean
   browseTarget: { instanceId: string; kind: ContentKind } | null
+  /** A Settings section to open and scroll to on the next visit. */
+  settingsAnchor: 'advanced' | null
   toasts: Toast[]
 
   /** Live Microsoft sign-in, while the user finishes it in a browser. */
@@ -77,6 +79,7 @@ interface State {
   setAccountsOpen(open: boolean): void
   setShortcutsOpen(open: boolean): void
   setDetailTab(tab: DetailTab): void
+  clearSettingsAnchor(): void
 
   refreshInstances(): Promise<void>
   refreshAccounts(): Promise<void>
@@ -106,6 +109,7 @@ interface State {
 }
 
 let toastSeq = 1
+let settingsQueue: Promise<void> = Promise.resolve()
 let initStarted = false
 
 export const useStore = create<State>((set, get) => ({
@@ -130,6 +134,7 @@ export const useStore = create<State>((set, get) => ({
   accountsOpen: false,
   shortcutsOpen: false,
   browseTarget: null,
+  settingsAnchor: null,
   toasts: [],
   authPrompt: null,
   authBusy: false,
@@ -226,8 +231,10 @@ export const useStore = create<State>((set, get) => ({
     const s = get()
     switch (fix) {
       case 'java':
-      case 'network':
         set({ route: 'settings', detailInstance: null, browseTarget: null })
+        break
+      case 'network':
+        set({ route: 'settings', detailInstance: null, browseTarget: null, settingsAnchor: 'advanced' })
         break
       case 'accounts':
         set({ accountsOpen: true })
@@ -252,6 +259,7 @@ export const useStore = create<State>((set, get) => ({
   setAccountsOpen: (open) => set({ accountsOpen: open }),
   setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
   setDetailTab: (tab) => set({ detailTab: tab }),
+  clearSettingsAnchor: () => set({ settingsAnchor: null }),
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
   async refreshInstances() {
@@ -260,10 +268,19 @@ export const useStore = create<State>((set, get) => ({
   async refreshAccounts() {
     set({ accounts: await api.listAccounts() })
   },
-  async saveSettings(patch) {
-    const settings = await api.saveSettings(patch)
-    const providers = await api.providerStatus()
-    set({ settings, providers })
+  saveSettings(patch) {
+    // Apply at once so the change is live (theme, style) before the disk write
+    // returns, then adopt the main process's normalized copy. Saves run one at
+    // a time so a slow write can never land after a newer one.
+    set((s) => ({ settings: s.settings ? { ...s.settings, ...patch } : s.settings }))
+    const run = async (): Promise<void> => {
+      const settings = await api.saveSettings(patch)
+      const providers = await api.providerStatus()
+      set({ settings, providers })
+    }
+    const next = settingsQueue.then(run, run)
+    settingsQueue = next.catch(() => undefined)
+    return next
   },
   async refreshJava() {
     try {

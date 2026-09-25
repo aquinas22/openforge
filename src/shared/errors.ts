@@ -19,7 +19,7 @@ export const FIX_LABEL: Record<FixAction, string> = {
   accounts: 'Open accounts',
   repair: 'Repair files',
   memory: 'Adjust memory',
-  network: 'Network settings',
+  network: 'Connection check',
   console: 'Open console',
   content: 'Review mods',
   jvm: 'Edit JVM flags'
@@ -40,7 +40,7 @@ const LAUNCH_RULES: [RegExp, Explanation][] = [
   rule(/Add an account|No account selected/i, 'Add a Microsoft account or an offline profile, then press Play again.', 'accounts'),
   rule(/sign in to Microsoft again|reauth/i, 'Sign in to Microsoft again from the account menu.', 'accounts'),
   rule(/does not own Minecraft|entitle/i, 'This Microsoft account has no Java Edition licence. Use an offline profile or another account.', 'accounts'),
-  rule(/trusted HTTPS connection|certificate/i, 'Your network is intercepting HTTPS. Settings -> Network explains the fix.', 'network'),
+  rule(/trusted HTTPS connection|certificate/i, 'Your network is intercepting HTTPS. The connection check in Settings (Content providers, Advanced) explains the fix.', 'network'),
   rule(/ENOTFOUND|ECONNRESET|ETIMEDOUT|fetch failed|network/i, 'Check your internet connection, then try again. Installed profiles still launch offline.', 'network'),
   rule(/ENOSPC|no space left/i, 'The disk is full. Free some space, or move the game folder in Settings.'),
   rule(/EPERM|EBUSY|EACCES|operation not permitted|resource busy/i, 'A file is locked. Close Minecraft and any other launcher, then try again.'),

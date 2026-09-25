@@ -35,7 +35,15 @@ import type {
 import { diagnoseCrash, type FixAction } from '@shared/errors'
 import { recommendedRamMb } from '@shared/tuning'
 import { GamePaths } from './core/paths'
-import { loadInstances, loadLegacyUsername, loadSettings, saveInstances, saveSettings } from './core/store'
+import {
+  defaultSettings,
+  loadInstances,
+  loadLegacyUsername,
+  loadSettings,
+  saveInstances,
+  saveSettings
+} from './core/store'
+import { applySettingsPatch } from '@shared/settings'
 import { AccountStore } from './core/accounts'
 import { startDeviceCode, pollForTokens, authenticateMinecraft, MicrosoftAuthError } from './core/msauth'
 import { discoverJava, pickJava, probeJava } from './core/java'
@@ -361,13 +369,22 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     platform: process.platform,
     arch: arch()
   }))
+  // Settings save on every change (the renderer debounces typing), so this
+  // must be cheap and must leave the app consistent after each call: values
+  // are normalized, and anything cached from the old value is dropped here.
   ipcMain.handle(IPC.saveSettings, (_e, patch: Partial<Settings>) => {
-    const previousProxy = settings.proxyUrl
-    if (patch.javaPath !== undefined || patch.autoJava !== undefined || patch.gameDir !== undefined) forgetJava()
-    settings = { ...settings, ...patch }
+    const previous = settings
+    settings = applySettingsPatch(settings, patch, defaultSettings())
     settings.ramMb = clampRam(settings.ramMb)
+    if (
+      settings.javaPath !== previous.javaPath ||
+      settings.autoJava !== previous.autoJava ||
+      settings.gameDir !== previous.gameDir
+    ) {
+      forgetJava()
+    }
     saveSettings(settings)
-    if (settings.proxyUrl !== previousProxy) void applyProxySettings(settings.proxyUrl)
+    if (settings.proxyUrl !== previous.proxyUrl) void applyProxySettings(settings.proxyUrl)
     return settings
   })
 
@@ -381,8 +398,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       { name: 'CurseForge CDN', url: 'https://mediafilez.forgecdn.net/', anyResponse: true },
       { name: 'Fabric meta', url: 'https://meta.fabricmc.net/v2/versions/game' },
       { name: 'NeoForge maven', url: 'https://maven.neoforged.net/releases/' },
-      { name: 'Adoptium (Java)', url: 'https://api.adoptium.net/v3/info/available_releases' },
-      { name: 'Microsoft sign-in', url: 'https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize' }
+      { name: 'Adoptium (Java)', url: 'https://api.adoptium.net/v3/info/available_releases' }
     ]
     const probes: Promise<NetworkCheck>[] = (targets as { name: string; url: string; anyResponse?: boolean }[]).map(
       async ({ name, url, anyResponse }) => {
@@ -504,7 +520,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       return { latest: manifest.latest, versions: manifest.versions }
     } catch (err) {
       // The launcher must still open and run installed instances when Mojang is
-      // unreachable. Settings -> Network is where the reason gets explained.
+      // unreachable. The connection check under Settings -> Content providers -> Advanced explains why.
       console.warn('[Openforge] Version manifest unavailable:', (err as Error).message)
       return { latest: { release: '', snapshot: '' }, versions: [] }
     }

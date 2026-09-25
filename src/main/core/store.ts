@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Instance, Settings } from '@shared/types'
 import { defaultGameDir } from './paths'
+import { defaultSettings as sharedDefaults, migrateSettings } from '@shared/settings'
 
 /**
  * Tiny JSON-file store for settings and instances.
@@ -31,36 +32,26 @@ function writeJson(name: string, data: unknown): void {
 }
 
 export function defaultSettings(): Settings {
-  return {
-    gameDir: defaultGameDir(),
-    javaPath: '',
-    autoJava: true,
-    ramMb: 4096,
-    jvmArgs:
-      '-XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M',
-    theme: 'terra',
-    uiStyle: 'modern',
-    defaultProvider: 'modrinth',
-    cfProxyUrl: '',
-    cfApiKey: '',
-    msClientId: '',
-    launchMode: 'direct',
-    closeLauncherOnLaunch: false,
-    fullscreen: false,
-    resolutionWidth: 1280,
-    resolutionHeight: 720,
-    downloadConcurrency: 16,
-    proxyUrl: ''
-  }
+  return sharedDefaults(defaultGameDir())
 }
 
+/** Read settings.json, migrating an older file forward and writing it back once. */
 export function loadSettings(): Settings {
-  const settings = readJson<Settings>('settings.json', defaultSettings())
-  // Strip the retired direct-auth application ID from older settings files.
-  delete (settings as Settings & { microsoftClientId?: string }).microsoftClientId
-  // 1.x called the direct launch path "offline", because that was the only
-  // identity it could launch with. It now covers Microsoft accounts too.
-  if ((settings.launchMode as string) === 'offline') settings.launchMode = 'direct'
+  let raw: unknown = undefined
+  try {
+    const p = configPath('settings.json')
+    if (existsSync(p)) raw = JSON.parse(readFileSync(p, 'utf8'))
+  } catch {
+    raw = undefined // corrupt file: start from defaults rather than refuse to open
+  }
+  const { settings, migrated } = migrateSettings(raw, defaultSettings())
+  if (migrated && raw !== undefined) {
+    try {
+      saveSettings(settings)
+    } catch {
+      /* read-only profile: keep running on the migrated copy in memory */
+    }
+  }
   return settings
 }
 

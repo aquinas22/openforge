@@ -59,7 +59,7 @@ export class TlsInterceptionError extends Error {
       `Could not establish a trusted HTTPS connection to ${hostOf(url)}. ` +
         'Something on this network is intercepting the connection with a certificate this computer does not trust. ' +
         'If this is a school or work network, install their root certificate into the Windows trusted-root store ' +
-        '(Settings -> Network explains it); otherwise try a different network. ' +
+        '(Settings -> Content providers -> Advanced runs a connection check); otherwise try a different network. ' +
         `(${detail})`
     )
     this.name = 'TlsInterceptionError'

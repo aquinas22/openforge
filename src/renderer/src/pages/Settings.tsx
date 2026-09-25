@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Check,
+  ChevronRight,
   Cpu,
   Download,
   FolderOpen,
@@ -78,31 +79,133 @@ function cfStatusText(cf: ProviderStatus['curseforge']): string {
   }
 }
 
-export function Settings(): JSX.Element {
+type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+
+/** Typing and dragging settle for this long before they are written. */
+const DEBOUNCE_MS = 400
+
+/**
+ * Every control saves as it changes: toggles, pickers, and selects at once;
+ * text fields and sliders once they settle. There is no Save button.
+ */
+function useAutoSave(): {
+  form: SettingsType | null
+  change: (patch: Partial<SettingsType>, when?: 'now' | 'settle') => void
+  flush: () => void
+  state: SaveState
+} {
   const settings = useStore((s) => s.settings)
+  const saveSettings = useStore((s) => s.saveSettings)
+  const toast = useStore((s) => s.toast)
+  const [form, setForm] = useState<SettingsType | null>(settings)
+  const [state, setState] = useState<SaveState>('idle')
+  const pending = useRef<Partial<SettingsType>>({})
+  const timer = useRef<number | undefined>(undefined)
+  const fade = useRef<number | undefined>(undefined)
+
+  // Adopt the saved (normalized) values, but never over something still being typed.
+  useEffect(() => {
+    if (Object.keys(pending.current).length === 0) setForm(settings)
+  }, [settings])
+
+  const flush = useCallback((): void => {
+    window.clearTimeout(timer.current)
+    const patch = pending.current
+    pending.current = {}
+    if (Object.keys(patch).length === 0) return
+    setState('saving')
+    saveSettings(patch).then(
+      () => {
+        setState('saved')
+        window.clearTimeout(fade.current)
+        fade.current = window.setTimeout(() => setState('idle'), 2200)
+      },
+      (e) => {
+        setState('error')
+        toast(cleanError(e), 'error')
+      }
+    )
+  }, [saveSettings, toast])
+
+  const change = useCallback(
+    (patch: Partial<SettingsType>, when: 'now' | 'settle' = 'now'): void => {
+      setForm((current) => (current ? { ...current, ...patch } : current))
+      pending.current = { ...pending.current, ...patch }
+      window.clearTimeout(timer.current)
+      if (when === 'now') flush()
+      else timer.current = window.setTimeout(flush, DEBOUNCE_MS)
+    },
+    [flush]
+  )
+
+  // Leaving the page must not drop a change that was still settling.
+  const flushRef = useRef(flush)
+  flushRef.current = flush
+  useEffect(
+    () => () => {
+      flushRef.current()
+      window.clearTimeout(fade.current)
+    },
+    []
+  )
+
+  return { form, change, flush, state }
+}
+
+function SaveIndicator({ state }: { state: SaveState }): JSX.Element {
+  return (
+    <div className={`save-indicator ${state}`} role="status" aria-live="polite">
+      {state === 'saving' ? (
+        <>
+          <Loader2 size={13} className="spin" /> Saving…
+        </>
+      ) : state === 'saved' ? (
+        <>
+          <Check size={13} /> Saved
+        </>
+      ) : state === 'error' ? (
+        <>
+          <TriangleAlert size={13} /> Not saved
+        </>
+      ) : (
+        <>Changes save automatically</>
+      )}
+    </div>
+  )
+}
+
+export function Settings(): JSX.Element {
   const systemInfo = useStore((s) => s.systemInfo)
   const java = useStore((s) => s.java)
   const javaRuntimes = useStore((s) => s.javaRuntimes)
   const providers = useStore((s) => s.providers)
   const refreshJava = useStore((s) => s.refreshJava)
-  const saveSettings = useStore((s) => s.saveSettings)
   const toast = useStore((s) => s.toast)
+  const settingsAnchor = useStore((s) => s.settingsAnchor)
+  const clearSettingsAnchor = useStore((s) => s.clearSettingsAnchor)
 
-  const [form, setForm] = useState<SettingsType | null>(settings)
+  const { form, change, flush, state } = useAutoSave()
   const [checks, setChecks] = useState<NetworkCheck[] | null>(null)
   const [checking, setChecking] = useState(false)
   const [installingJava, setInstallingJava] = useState<number | null>(null)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const advancedRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => setForm(settings), [settings])
+  // A "Connection check" fix button lands here with Advanced open.
+  useEffect(() => {
+    if (settingsAnchor !== 'advanced') return
+    setAdvancedOpen(true)
+    clearSettingsAnchor()
+    window.setTimeout(() => advancedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }, [settingsAnchor, clearSettingsAnchor])
 
   if (!form) return <div className="page" />
+  /** Toggles, pickers and selects: saved at once. */
   const set = <K extends keyof SettingsType>(k: K, v: SettingsType[K]): void =>
-    setForm({ ...form, [k]: v })
-
-  async function saveAll(): Promise<void> {
-    if (form) await saveSettings(form)
-    toast('Settings saved', 'success')
-  }
+    change({ [k]: v } as Partial<SettingsType>)
+  /** Text fields and sliders: saved once they settle. */
+  const type = <K extends keyof SettingsType>(k: K, v: SettingsType[K]): void =>
+    change({ [k]: v } as Partial<SettingsType>, 'settle')
 
   async function runNetworkCheck(): Promise<void> {
     setChecking(true)
@@ -117,17 +220,16 @@ export function Settings(): JSX.Element {
 
   const blocked = checks?.filter((check) => !check.ok) ?? []
   const intercepted = blocked.filter((check) => check.tlsIntercepted)
+  const cf = providers.curseforge
 
   return (
-    <div className="page">
+    <div className="page settings-page">
       <div className="page-head">
         <div>
           <div className="eyebrow">Preferences</div>
           <h1 className="page-title">Settings</h1>
         </div>
-        <button className="btn primary" onClick={saveAll}>
-          <Check size={16} /> Save changes
-        </button>
+        <SaveIndicator state={state} />
       </div>
 
       <Section icon={<ShieldCheck size={18} />} title="How the game starts">
@@ -174,7 +276,8 @@ export function Settings(): JSX.Element {
             className="input"
             placeholder="00000000-0000-0000-0000-000000000000"
             value={form.msClientId}
-            onChange={(e) => set('msClientId', e.target.value.trim())}
+            onChange={(e) => type('msClientId', e.target.value.trim())}
+            onBlur={flush}
           />
           <div className="hint">
             Microsoft only grants Minecraft sign-in to a registered application, and Openforge ships
@@ -196,62 +299,123 @@ export function Settings(): JSX.Element {
 
       <Section icon={<Package size={18} />} title="Content providers">
         <div className="field">
-          <label>Default source in Discover</label>
-          <div className="style-picker">
-            {(
-              [
-                ['modrinth', 'Modrinth', 'Open API, no key, no setup. Carries Homestead and most modern packs.'],
-                ['curseforge', 'CurseForge', providers.curseforge.mode === 'builtin'
-                  ? 'The largest catalogue, including All the Mods. Works out of the box.'
-                  : 'The largest catalogue, including All the Mods. Needs a key or a proxy.']
-              ] as [Provider, string, string][]
-            ).map(([id, title, detail]) => (
-              <button
-                key={id}
-                className={`style-card${form.defaultProvider === id ? ' active' : ''}`}
-                onClick={() => set('defaultProvider', id)}
-                aria-pressed={form.defaultProvider === id}
-              >
-                <span className={`provider-tag ${id}`} aria-hidden="true">
-                  {title}
-                </span>
-                <span>
-                  <strong>{title}</strong>
-                  <small>{detail}</small>
-                </span>
-              </button>
-            ))}
-          </div>
+          <label htmlFor="default-source">Discover opens on</label>
+          <select
+            id="default-source"
+            className="select"
+            value={form.defaultProvider}
+            onChange={(e) => set('defaultProvider', e.target.value as Provider)}
+          >
+            <option value="curseforge">
+              CurseForge{cf.available ? '' : ' (unavailable - Modrinth is used meanwhile)'}
+            </option>
+            <option value="modrinth">Modrinth</option>
+          </select>
+          <div className="hint">{cfStatusText(cf)} Discover remembers the source you pick last.</div>
         </div>
 
-        <div className="field">
-          <label>Your own CurseForge API key (optional)</label>
-          <input
-            className="input"
-            type="password"
-            placeholder={
-              providers.curseforge.mode === 'builtin'
-                ? 'Using the built-in key - paste your own to override it'
-                : 'Paste your CurseForge API key'
-            }
-            value={form.cfApiKey}
-            onChange={(e) => set('cfApiKey', e.target.value.trim())}
-          />
-          <div className="hint">
-            {providers.curseforge.mode === 'builtin'
-              ? 'Using the built-in key. CurseForge works with no setup; paste your own free key from console.curseforge.com if you would rather use yours.'
-              : 'Free at console.curseforge.com. A direct key also unlocks bulk resolution, which is the difference between a 400-mod pack installing in seconds and in minutes.'}
-          </div>
-        </div>
-        <div className="field" style={{ marginBottom: 0 }}>
-          <label>CurseForge proxy URL (optional)</label>
-          <input
-            className="input"
-            placeholder="Leave empty to use an API key"
-            value={form.cfProxyUrl}
-            onChange={(e) => set('cfProxyUrl', e.target.value.trim())}
-          />
-          <div className="hint">{cfStatusText(providers.curseforge)}</div>
+        <div className={`advanced${advancedOpen ? ' open' : ''}`} ref={advancedRef}>
+          <button
+            className="advanced-toggle"
+            aria-expanded={advancedOpen}
+            onClick={() => setAdvancedOpen((open) => !open)}
+          >
+            <ChevronRight size={15} className="advanced-chevron" />
+            <span>
+              <strong>Advanced</strong>
+              <small>Your own CurseForge key, a CurseForge proxy, a network proxy, and a connection check</small>
+            </span>
+          </button>
+
+          {advancedOpen && (
+            <div className="advanced-body">
+              <div className="field">
+                <label htmlFor="cf-key">Your own CurseForge API key</label>
+                <input
+                  id="cf-key"
+                  className="input"
+                  type="password"
+                  autoComplete="off"
+                  placeholder={
+                    cf.mode === 'builtin'
+                      ? 'Optional - the built-in key is in use'
+                      : 'Paste a key from console.curseforge.com'
+                  }
+                  value={form.cfApiKey}
+                  onChange={(e) => type('cfApiKey', e.target.value.trim())}
+                  onBlur={flush}
+                />
+                <div className="hint">Overrides the built-in key. Free at console.curseforge.com.</div>
+              </div>
+              <div className="field">
+                <label htmlFor="cf-proxy">CurseForge proxy URL</label>
+                <input
+                  id="cf-proxy"
+                  className="input"
+                  placeholder="https://your-server.example"
+                  value={form.cfProxyUrl}
+                  onChange={(e) => type('cfProxyUrl', e.target.value.trim())}
+                  onBlur={flush}
+                />
+                <div className="hint">
+                  A server that holds the key for you. It wins over any key when set; bulk resolution needs a
+                  direct key.
+                </div>
+              </div>
+              <div className="field">
+                <label htmlFor="net-proxy">Network proxy</label>
+                <input
+                  id="net-proxy"
+                  className="input"
+                  placeholder="Empty uses the system proxy"
+                  value={form.proxyUrl}
+                  onChange={(e) => type('proxyUrl', e.target.value.trim())}
+                  onBlur={flush}
+                />
+                <div className="hint">
+                  Only to override the system proxy. Certificates come from this computer&apos;s trusted-root
+                  store; if a school or work network inspects HTTPS, install its root certificate in Windows.
+                </div>
+              </div>
+
+              <div className="between" style={{ marginBottom: 10 }}>
+                <label style={{ fontWeight: 600, fontSize: 13, margin: 0 }}>Connection check</label>
+                <button className="btn sm" onClick={runNetworkCheck} disabled={checking}>
+                  {checking ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} Run check
+                </button>
+              </div>
+
+              {intercepted.length > 0 && (
+                <div className="notice danger">
+                  <TriangleAlert size={16} />
+                  <div>
+                    <strong>This network is intercepting HTTPS</strong>
+                    <span>
+                      {intercepted.length} service{intercepted.length === 1 ? '' : 's'} answered with a
+                      certificate this machine does not trust. Install the organisation&apos;s root certificate
+                      into Windows, or use another network.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {checks && (
+                <div className="panel runtime-list">
+                  {checks.map((check) => (
+                    <div className="runtime-row" key={check.name}>
+                      <div>
+                        <strong>{check.name}</strong>
+                        <small>{check.ok ? check.url : (check.error ?? 'Unreachable')}</small>
+                      </div>
+                      <span className={`chip ${check.ok ? 'accent' : 'warn'}`}>
+                        {check.ok ? `OK ${check.status ?? ''}` : check.tlsIntercepted ? 'Blocked' : 'Failed'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </Section>
 
@@ -363,7 +527,9 @@ export function Settings(): JSX.Element {
             max={systemInfo?.maxRamMb ?? 4096}
             step={256}
             value={form.ramMb}
-            onChange={(e) => set('ramMb', Number(e.target.value))}
+            onChange={(e) => type('ramMb', Number(e.target.value))}
+            onPointerUp={flush}
+            onKeyUp={flush}
           />
           <div className="between hint" style={{ marginTop: 6 }}>
             <span>1 GB</span>
@@ -389,7 +555,9 @@ export function Settings(): JSX.Element {
             max={64}
             step={1}
             value={form.downloadConcurrency}
-            onChange={(e) => set('downloadConcurrency', Number(e.target.value))}
+            onChange={(e) => type('downloadConcurrency', Number(e.target.value))}
+            onPointerUp={flush}
+            onKeyUp={flush}
           />
           <div className="hint" style={{ marginTop: 6 }}>
             How many files to fetch at once. 16 suits most connections; lower it if your network or a
@@ -402,74 +570,11 @@ export function Settings(): JSX.Element {
             className="input"
             rows={3}
             value={form.jvmArgs}
-            onChange={(e) => set('jvmArgs', e.target.value)}
+            onChange={(e) => type('jvmArgs', e.target.value)}
+            onBlur={flush}
           />
           <div className="hint">Advanced. The defaults are tuned G1GC flags that work well for modded packs.</div>
         </div>
-      </Section>
-
-      <Section icon={<Globe size={18} />} title="Network">
-        <div className="field">
-          <label>Proxy URL (optional)</label>
-          <input
-            className="input"
-            placeholder="Leave empty to use the system proxy"
-            value={form.proxyUrl}
-            onChange={(e) => set('proxyUrl', e.target.value.trim())}
-          />
-          <div className="hint">
-            Openforge uses Chromium&apos;s network stack, so the system proxy and any certificates
-            installed on this machine already apply. Set one here only to override that.
-          </div>
-        </div>
-        <div className="field">
-          <label>Certificates on managed networks</label>
-          <div className="hint">
-            Openforge verifies every HTTPS connection against this computer&apos;s certificate store
-            and never disables that check. If your school or workplace inspects HTTPS traffic,
-            install their root certificate into the Windows <em>Trusted Root Certification
-            Authorities</em> store — Openforge, Chrome, and Edge all read from it, and the services
-            below start working immediately. Nothing needs to be configured here.
-          </div>
-        </div>
-
-        <div className="between" style={{ marginBottom: 12 }}>
-          <label style={{ fontWeight: 600, fontSize: 13, margin: 0 }}>Connection check</label>
-          <button className="btn sm" onClick={runNetworkCheck} disabled={checking}>
-            {checking ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} Run check
-          </button>
-        </div>
-
-        {intercepted.length > 0 && (
-          <div className="notice danger">
-            <TriangleAlert size={16} />
-            <div>
-              <strong>This network is intercepting HTTPS</strong>
-              <span>
-                {intercepted.length} service{intercepted.length === 1 ? '' : 's'} answered with a
-                certificate this machine does not trust. That is a network policy, not a fault in the
-                launcher — installing the organisation&apos;s root certificate above, or moving to a
-                home network, restores these.
-              </span>
-            </div>
-          </div>
-        )}
-
-        {checks && (
-          <div className="panel runtime-list">
-            {checks.map((check) => (
-              <div className="runtime-row" key={check.url}>
-                <div>
-                  <strong>{check.name}</strong>
-                  <small>{check.ok ? check.url : (check.error ?? 'Unreachable')}</small>
-                </div>
-                <span className={`chip ${check.ok ? 'accent' : 'warn'}`}>
-                  {check.ok ? `OK ${check.status ?? ''}` : check.tlsIntercepted ? 'Blocked' : 'Failed'}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
       </Section>
 
       <Section icon={<Palette size={18} />} title="Appearance">
@@ -531,7 +636,8 @@ export function Settings(): JSX.Element {
             <input
               className="input"
               value={form.gameDir}
-              onChange={(e) => set('gameDir', e.target.value)}
+              onChange={(e) => type('gameDir', e.target.value)}
+              onBlur={flush}
               style={{ flex: 1 }}
             />
             <button
@@ -557,8 +663,10 @@ export function Settings(): JSX.Element {
             <input
               className="input"
               type="number"
+              min={320}
               value={form.resolutionWidth}
-              onChange={(e) => set('resolutionWidth', Number(e.target.value))}
+              onChange={(e) => e.target.value && type('resolutionWidth', Number(e.target.value))}
+              onBlur={flush}
             />
           </div>
           <div className="field" style={{ flex: 1, marginBottom: 0 }}>
@@ -566,8 +674,10 @@ export function Settings(): JSX.Element {
             <input
               className="input"
               type="number"
+              min={240}
               value={form.resolutionHeight}
-              onChange={(e) => set('resolutionHeight', Number(e.target.value))}
+              onChange={(e) => e.target.value && type('resolutionHeight', Number(e.target.value))}
+              onBlur={flush}
             />
           </div>
         </div>

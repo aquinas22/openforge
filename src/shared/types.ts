@@ -209,6 +209,8 @@ export type UiStyle = 'modern' | 'classic'
 export type LaunchMode = 'direct' | 'official'
 
 export interface Settings {
+  /** Schema version of settings.json; see shared/settings.ts for the migrations. */
+  settingsVersion: number
   gameDir: string
   javaPath: string
   /** Download and manage Temurin runtimes automatically when one is missing. */
@@ -219,13 +221,20 @@ export interface Settings {
   theme: ThemeId
   /** Shape, spacing, and surface treatment. Independent from the biome colors. */
   uiStyle: UiStyle
-  /** Preferred content provider shown first in Discover. */
+  /**
+   * The Discover source, remembered from the last pick. CurseForge by default;
+   * Discover falls back to Modrinth only while CurseForge is unavailable.
+   */
   defaultProvider: Provider
   /** Base URL of the CurseForge proxy (e.g. your servercraft server). */
   cfProxyUrl: string
   /** Optional direct CurseForge API key, used only when no proxy is set. */
   cfApiKey: string
-  /** Azure application (client) id used for Microsoft sign-in. */
+  /**
+   * Azure application (client) id for Microsoft sign-in. Microsoft sign-in is
+   * switched off in this release (see docs/microsoft-auth-plan.md); the value
+   * is kept so re-enabling it does not lose an existing entry.
+   */
   msClientId: string
   launchMode: LaunchMode
   closeLauncherOnLaunch: boolean
@@ -247,7 +256,7 @@ export interface SystemInfo {
   arch: string
 }
 
-/** One row in the Settings -> Network diagnostics table. */
+/** One row in the connection check (Settings -> Content providers -> Advanced). */
 export interface NetworkCheck {
   name: string
   url: string
