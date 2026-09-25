@@ -63,12 +63,14 @@ export function TitleBar(): JSX.Element {
 const NAV: { key: Route; label: string; sprite: string }[] = [
   { key: 'library', label: 'Library', sprite: sprites.chest },
   { key: 'discover', label: 'Discover', sprite: sprites.compass },
+  { key: 'servers', label: 'Servers', sprite: sprites.furnace },
   { key: 'settings', label: 'Settings', sprite: sprites.pickaxe }
 ]
 
 const NAV_DETAIL: Record<Route, string> = {
   library: 'Your instances',
   discover: 'Packs, mods & textures',
+  servers: 'Local and SSH hosting',
   settings: 'Launcher setup'
 }
 

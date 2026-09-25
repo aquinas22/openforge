@@ -50,6 +50,11 @@ import { installerUrl, processorOutputs, resolveProfileValue } from '../src/main
 import { stageFromLogLine } from '../src/main/core/launcher'
 import { gcArgs, recommendedRamMb, tunedJvmArgs } from '../src/shared/tuning'
 import { diagnoseCrash, explainError } from '../src/shared/errors'
+import { spawnSync } from 'node:child_process'
+import { buildSshArgs, classifySshError, effectiveCommands, presetCommands, remotePath, shQuote } from '../src/shared/ssh'
+import { lineSplitter, parseServerLogLine, PlayerTracker } from '../src/main/core/servers/logparse'
+import { buildLocalLaunch, startServerProcess } from '../src/main/core/servers/process'
+import type { SshServerConfig } from '../src/shared/types'
 import { checkOfflinePlayAllowed, detectLauncherInstall, parseLauncherAccounts, STORE_PACKAGE_FAMILY } from '../src/main/core/ownership'
 import { installContent } from '../src/main/core/content'
 import type { ModrinthClient } from '../src/main/core/modrinth'
@@ -1058,6 +1063,272 @@ function ownershipSuite(): void {
   ok(!detectLauncherInstall(env, () => false).installed, 'nothing installed is reported as such')
 }
 
+// -- Servers: SSH argv and quoting, log parsing, local start/stop ---------------------
+
+/** A POSIX shell to prove quoting against, when this machine has one (Git Bash, WSL, Linux). */
+function findPosixShell(): string | null {
+  const candidates = ['sh', 'C:/Program Files/Git/usr/bin/sh.exe', 'C:/Program Files/Git/bin/sh.exe']
+  for (const candidate of candidates) {
+    const probe = spawnSync(candidate, ['-c', 'printf ok'], { encoding: 'utf8' })
+    if (!probe.error && probe.stdout === 'ok') return candidate
+  }
+  return null
+}
+
+function sshCfg(overrides: Partial<SshServerConfig>): SshServerConfig {
+  return {
+    id: 'x', kind: 'ssh', name: 'x', createdAt: '', host: 'h', port: 22, user: 'u', identityFile: '',
+    control: 'tmux', session: 'mc', unit: 'minecraft', serverDir: '~/server', startScript: './run.sh',
+    logPath: '', startCommand: '', stopCommand: '', statusCommand: '', sendCommand: '', tailCommand: '',
+    ...overrides
+  }
+}
+
+function sshSuite(): void {
+  section('SSH argv')
+  const target = { host: 'mc.example.net', port: 2222, user: 'minecraft', identityFile: '' }
+  const args = buildSshArgs(target, 'tmux has-session -t mc')
+  ok(args.join(' ').includes('-o BatchMode=yes'), 'BatchMode=yes: never prompts for a password')
+  ok(args.includes('ConnectTimeout=10'), 'a ConnectTimeout is set')
+  ok(args.includes('StrictHostKeyChecking=accept-new'), 'StrictHostKeyChecking=accept-new')
+  ok(args[args.indexOf('-p') + 1] === '2222' && args[args.indexOf('-l') + 1] === 'minecraft', 'port and user are separate argv entries')
+  ok(
+    args.at(-3) === '--' && args.at(-2) === 'mc.example.net' && args.at(-1) === 'tmux has-session -t mc',
+    '"--" ends options before the host; the remote command is one final argument'
+  )
+  ok(!args.includes('-i'), 'no -i without a key file (ssh-agent is used)')
+  const keyed = buildSshArgs({ ...target, identityFile: 'C:/Users/me/.ssh/id_ed25519' }, 'true')
+  ok(
+    keyed[keyed.indexOf('-i') + 1] === 'C:/Users/me/.ssh/id_ed25519' && keyed.includes('IdentitiesOnly=yes'),
+    'a key file is passed with -i and IdentitiesOnly'
+  )
+
+  const rejects = (t: Partial<typeof target>, label: string): void => {
+    let threw = false
+    try {
+      buildSshArgs({ ...target, ...t }, 'true')
+    } catch {
+      threw = true
+    }
+    ok(threw, label)
+  }
+  rejects({ host: '-oProxyCommand=calc.exe' }, 'a host that looks like an option is refused')
+  rejects({ host: 'mc.example.net;calc' }, 'a host with shell characters is refused')
+  rejects({ host: 'two words' }, 'a host with spaces is refused')
+  rejects({ host: '' }, 'an empty host is refused')
+  rejects({ user: 'root;id' }, 'a user with shell characters is refused')
+  rejects({ user: '-oProxyCommand=x' }, 'a user that looks like an option is refused')
+  rejects({ port: 0 }, 'port 0 is refused')
+  rejects({ port: 70000 }, 'port 70000 is refused')
+  rejects({ port: 22.5 }, 'a fractional port is refused')
+  rejects({ identityFile: '-oProxyCommand=x' }, 'a key path that looks like an option is refused')
+  ok(buildSshArgs({ ...target, host: '192.168.1.20' }, 'true').includes('192.168.1.20'), 'IPv4 addresses are accepted')
+  ok(buildSshArgs({ ...target, host: 'fe80::1' }, 'true').includes('fe80::1'), 'IPv6 addresses are accepted')
+
+  section('Remote quoting')
+  const Q = String.fromCharCode(39) // a single quote
+  ok(shQuote(`it${Q}s`) === `${Q}it${Q}\\${Q}${Q}s${Q}`, 'a single quote is closed, escaped and reopened', shQuote(`it${Q}s`))
+  ok(shQuote('$HOME') === `${Q}$HOME${Q}`, '$ stays literal inside single quotes')
+  ok(remotePath('~/server') === `"$HOME"/${Q}server${Q}`, '~/ keeps meaning the remote home')
+  const hostile = [
+    `mc${Q}; rm -rf ~; echo ${Q}`,
+    '$(id)',
+    '`id`',
+    'a"b',
+    `x\\${Q}y`,
+    '$HOME && reboot',
+    'say "hi" & $(touch /tmp/p)'
+  ]
+  const sh = findPosixShell()
+  if (!sh) {
+    console.log('  · no POSIX shell on this machine; quoting checked structurally only')
+    for (const value of hostile) ok(shQuote(value).startsWith(Q) && shQuote(value).endsWith(Q), `quoted: ${value}`)
+  } else {
+    for (const value of hostile) {
+      const echoed = spawnSync(sh, ['-c', `printf ${Q}%s${Q} ${shQuote(value)}`], { encoding: 'utf8' }).stdout
+      ok(echoed === value, `survives a real shell unchanged: ${value}`)
+    }
+    // A stand-in tmux/screen prints the argv it would receive, one [arg] each.
+    const fake = (tool: string): string => `${tool}() { for a in "$@"; do printf ${Q}[%s]${Q} "$a"; done; printf ${Q}\\n${Q}; }; `
+    const hostileSession = `mc${Q}$(touch pwned)`
+    const cfg = sshCfg({ session: hostileSession, serverDir: '~/my server' })
+    const sent = spawnSync(sh, ['-c', fake('tmux') + presetCommands(cfg).send('say $(whoami) "hi"')!], { encoding: 'utf8' }).stdout
+    ok(
+      sent.split('\n')[0] === `[send-keys][-t][${hostileSession}][-l][--][say $(whoami) "hi"]`,
+      'tmux send-keys gets the session and the command as literal arguments',
+      sent.split('\n')[0]
+    )
+    const started = spawnSync(sh, ['-c', fake('tmux') + presetCommands(cfg).start], { encoding: 'utf8' }).stdout.trim()
+    ok(
+      started === `[new-session][-d][-s][${hostileSession}][cd "$HOME"/${Q}my server${Q} && ./run.sh]`,
+      'tmux new-session gets the session name literally and one inner command',
+      started
+    )
+    const screenCfg = sshCfg({ control: 'screen', session: 'my"mc' })
+    const screenSent = spawnSync(sh, ['-c', fake('screen') + presetCommands(screenCfg).send('say 100$ ^_^')!], { encoding: 'utf8' }).stdout.trim()
+    ok(
+      screenSent === '[-S][my"mc][-p][0][-X][stuff][say 100\\$ \\^_\\^^M]',
+      "screen's own escapes (^ $ \\) are escaped for stuff",
+      screenSent
+    )
+  }
+  const systemd = presetCommands(sshCfg({ control: 'systemd', unit: `mine${Q}craft` }))
+  ok(systemd.start === `sudo -n systemctl start -- ${Q}mine${Q}\\${Q}${Q}craft${Q}`, 'systemd unit names are quoted, and sudo never prompts', systemd.start)
+  ok(systemd.send('list') === null, 'systemd has no console to type into without a custom send command')
+  const custom = effectiveCommands(sshCfg({ control: 'systemd', startCommand: 'my-start', sendCommand: 'mcrcon -H localhost {cmd}' }))
+  ok(custom.start === 'my-start', "the user's own start command runs as written")
+  ok(
+    custom.send(`say it${Q}s`) === `mcrcon -H localhost ${Q}say it${Q}\\${Q}${Q}s${Q}`,
+    'a send template gets the command quoted in place of {cmd}'
+  )
+
+  section('SSH errors')
+  const kind = (stderr: string, code: number | null = 255, timedOut = false): string => classifySshError(stderr, code, timedOut).kind
+  ok(kind('ssh: connect to host 10.0.0.9 port 22: Connection timed out') === 'timeout', 'timeout')
+  ok(kind('', null, true) === 'timeout', 'our own timeout counts as a timeout')
+  ok(kind('minecraft@mc.example.net: Permission denied (publickey).') === 'auth', 'auth failure')
+  ok(
+    kind('@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\nHost key verification failed.') === 'hostkey',
+    'host key change'
+  )
+  ok(kind('ssh: Could not resolve hostname nope.invalid: No such host is known.') === 'dns', 'unknown host')
+  ok(kind('ssh: connect to host 10.0.0.9 port 2222: Connection refused') === 'refused', 'connection refused')
+  ok(kind('Load key "C:/keys/id": invalid format\nminecraft@h: Permission denied (publickey).') === 'key', 'unusable key file')
+}
+
+function serverLogSuite(): void {
+  section('Server log parsing')
+  const done = parseServerLogLine('[12:00:01] [Server thread/INFO]: Done (3.456s)! For help, type "help"')
+  ok(done?.type === 'done' && done.seconds === 3.456, 'vanilla "Done" line')
+  ok(parseServerLogLine('[12:00:01 INFO]: Done (12.5s)! For help, type "help"')?.type === 'done', 'Paper "Done" line')
+  ok(
+    parseServerLogLine('[12:00:01] [Server thread/INFO] [minecraft/DedicatedServer]: Done (20.1s)! For help, type "help"')?.type === 'done',
+    'Forge "Done" line'
+  )
+  const join = parseServerLogLine('[12:01:00] [Server thread/INFO]: Steve joined the game')
+  ok(join?.type === 'join' && join.name === 'Steve', 'join')
+  ok(parseServerLogLine('[12:02:00] [Server thread/INFO]: Steve left the game')?.type === 'leave', 'leave')
+  ok(parseServerLogLine('[12:03:00] [Server thread/INFO]: <Steve> Bob joined the game') === null, 'chat cannot fake a join')
+  ok(parseServerLogLine('[12:03:00] [Server thread/INFO]: [Server] Bob joined the game') === null, '/say cannot fake a join')
+  const list = parseServerLogLine('[12:04:00] [Server thread/INFO]: There are 2 of a max of 20 players online: Alex, Steve')
+  ok(list?.type === 'list' && list.online === 2 && list.max === 20 && list.names?.join() === 'Alex,Steve', '"list" output, 1.13+')
+  const old = parseServerLogLine('[12:04:00] [Server thread/INFO]: There are 1/10 players online:')
+  ok(old?.type === 'list' && old.online === 1 && old.max === 10, '"list" output, old format')
+  ok(parseServerLogLine('\x1b[32m[12:00:01 INFO]: Done (1.0s)! For help, type "help"\x1b[0m')?.type === 'done', 'colour codes are ignored')
+
+  const t = new PlayerTracker()
+  for (const line of [
+    '[1] [Server thread/INFO]: Done (1.0s)! For help, type "help"',
+    '[1] [Server thread/INFO]: Alex joined the game',
+    '[1] [Server thread/INFO]: Steve joined the game',
+    '[1] [Server thread/INFO]: Alex left the game',
+    '[1] [Server thread/INFO]: <Steve> Notch joined the game'
+  ])
+    t.feed(line)
+  ok(t.ready && t.snapshot.online === 1 && t.snapshot.names.join() === 'Steve', 'tracker follows joins and leaves', JSON.stringify(t.snapshot))
+  t.feed('[1] [Server thread/INFO]: There are 3 of a max of 8 players online: A, B, C')
+  ok(t.snapshot.online === 3 && t.snapshot.max === 8, '"list" resynchronises the count')
+
+  const got: string[] = []
+  const split = lineSplitter((l) => got.push(l))
+  split.push('first li')
+  split.push('ne\r\nsecond\n')
+  split.push('tail')
+  split.end()
+  ok(got.join('|') === 'first line|second|tail', 'console lines split across chunks are joined back up')
+}
+
+const FAKE_SERVER = [
+  "const rl = require('readline').createInterface({ input: process.stdin })",
+  "console.log('[12:00:00] [Server thread/INFO]: Starting minecraft server version 1.21.1')",
+  "setTimeout(() => console.log('[12:00:01] [Server thread/INFO]: Done (0.100s)! For help, type \"help\"'), 100)",
+  "rl.on('line', (line) => {",
+  "  if (line === 'stop') {",
+  "    if (process.argv.includes('--stubborn')) return console.log('[x] [Server thread/INFO]: ignoring stop')",
+  "    console.log('[12:00:05] [Server thread/INFO]: Stopping server')",
+  '    setTimeout(() => process.exit(0), 50)',
+  "  } else if (line.startsWith('join ')) console.log('[12:00:02] [Server thread/INFO]: ' + line.slice(5) + ' joined the game')",
+  "  else console.log('[12:00:03] [Server thread/INFO]: [Server] ' + line)",
+  '})'
+].join('\n')
+
+async function localServerSuite(): Promise<void> {
+  section('Local server process')
+  const jar = buildLocalLaunch({ launch: 'jar', file: 'server.jar', ramMb: 4096, jvmArgs: '-XX:+UseG1GC' }, 'C:/java/bin/java.exe', 'win32')
+  ok(
+    jar.command === 'C:/java/bin/java.exe' && jar.args.join(' ') === '-Xmx4096M -Xms1024M -XX:+UseG1GC -jar server.jar nogui',
+    'a jar runs with the chosen Java and memory',
+    jar.args.join(' ')
+  )
+  const bat = buildLocalLaunch({ launch: 'script', file: 'run.bat', ramMb: 0, jvmArgs: '' }, 'C:/java/bin/java.exe', 'win32')
+  ok(
+    bat.command === 'cmd.exe' && bat.args.join(' ') === '/d /c .\\run.bat nogui' && Boolean(bat.env?.PATH?.startsWith('C:/java/bin')),
+    'run.bat runs through cmd with the chosen Java first on PATH'
+  )
+  let threw = 0
+  for (const bad of ['run.bat & calc.exe', 'run.sh', 'evil"name.bat']) {
+    try {
+      buildLocalLaunch({ launch: 'script', file: bad, ramMb: 0, jvmArgs: '' }, '', 'win32')
+    } catch {
+      threw++
+    }
+  }
+  ok(threw === 3, 'odd script names, and .sh on Windows, are refused')
+
+  const dir = makeTempDir('server')
+  writeFileSync(join(dir, 'fake-server.cjs'), FAKE_SERVER)
+  const tracker = new PlayerTracker()
+  const lines: string[] = []
+  let exitCode: number | null | undefined
+  const proc = startServerProcess({
+    command: process.execPath,
+    args: ['fake-server.cjs'],
+    cwd: dir,
+    onLine: (_s, line) => {
+      lines.push(line)
+      tracker.feed(line)
+    },
+    onExit: (code) => (exitCode = code)
+  })
+  const until = async (cond: () => boolean, ms = 5000): Promise<boolean> => {
+    const end = Date.now() + ms
+    while (!cond() && Date.now() < end) await new Promise((r) => setTimeout(r, 25))
+    return cond()
+  }
+  ok(await until(() => tracker.ready), 'the fake server reports "Done" and is seen as running')
+  proc.send('join Alex')
+  proc.send('say hi')
+  ok(await until(() => lines.some((l) => l.endsWith('[Server] say hi'))), 'console commands reach the server on stdin')
+  ok(tracker.snapshot.names.join() === 'Alex', 'players are counted from its log')
+  const result = await proc.stop(5000)
+  ok(result === 'stopped' && exitCode === 0 && !proc.running, 'stop sends "stop" and the server exits on its own', `${result} ${exitCode}`)
+
+  const stubborn = startServerProcess({
+    command: process.execPath,
+    args: ['fake-server.cjs', '--stubborn'],
+    cwd: dir,
+    onLine: () => undefined,
+    onExit: () => undefined
+  })
+  await new Promise((r) => setTimeout(r, 300))
+  const started = Date.now()
+  const forced = await stubborn.stop(600)
+  ok(forced === 'killed' && !stubborn.running, 'a server that ignores "stop" is killed after the timeout', `${forced} after ${Date.now() - started} ms`)
+
+  if (process.platform === 'win32') {
+    // The real script path: cmd.exe running run.bat, which starts the server.
+    writeFileSync(join(dir, 'run.bat'), `@echo off\r\n"${process.execPath}" fake-server.cjs %*\r\n`)
+    const launch = buildLocalLaunch({ launch: 'script', file: 'run.bat', ramMb: 0, jvmArgs: '' }, '')
+    const viaBat = new PlayerTracker()
+    let batExit: number | null | undefined
+    const batProc = startServerProcess({ ...launch, cwd: dir, onLine: (_s, l) => viaBat.feed(l), onExit: (c) => (batExit = c) })
+    ok(await until(() => viaBat.ready), 'run.bat starts the server through cmd.exe (even with NoDefaultCurrentDirectoryInExePath)')
+    const batStop = await batProc.stop(8000)
+    ok(batStop === 'stopped' && !batProc.running, 'and it stops gracefully through the script', `${batStop} ${batExit}`)
+  }
+  await rm(dir, { recursive: true, force: true })
+}
+
 async function main(): Promise<void> {
   console.log('Openforge core verification')
   const fixture = await startFixtureServer()
@@ -1078,6 +1349,9 @@ async function main(): Promise<void> {
     compatSuite()
     await contentInstallSuite(fixture)
     ownershipSuite()
+    sshSuite()
+    serverLogSuite()
+    await localServerSuite()
     await liveConnectivity()
   } finally {
     fixture.server.close()

@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import type { Instance, Settings } from '@shared/types'
+import type { Instance, ServerConfig, Settings } from '@shared/types'
 import { defaultGameDir } from './paths'
 import { defaultSettings as sharedDefaults, migrateSettings } from '../../shared/settings'
 
@@ -78,6 +78,18 @@ export function loadInstances(): Instance[] {
 
 export function saveInstances(instances: Instance[]): void {
   writeJson('instances.json', { instances })
+}
+
+/** Server configs for the Servers section. Never holds passwords (SSH uses keys). */
+export function loadServers(): ServerConfig[] {
+  const data = readJson<{ servers: ServerConfig[] }>('servers.json', { servers: [] })
+  return Array.isArray(data.servers)
+    ? data.servers.filter((s) => s && typeof s.id === 'string' && (s.kind === 'local' || s.kind === 'ssh'))
+    : []
+}
+
+export function saveServers(servers: ServerConfig[]): void {
+  writeJson('servers.json', { servers })
 }
 
 /** 1.x stored a single offline username; 2.0 has a full account book. */

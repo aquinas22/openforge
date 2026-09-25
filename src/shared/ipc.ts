@@ -23,7 +23,13 @@ import type {
   RetargetInput,
   RetargetPlan,
   RetargetResult,
+  ServerConfig,
+  ServerFolderInfo,
+  ServerLogLine,
+  ServerStatus,
   Settings,
+  SshServerConfig,
+  SshTestResult,
   SystemInfo,
   VersionSummary,
   WorldSummary
@@ -178,6 +184,28 @@ export interface OpenforgeApi {
   getVersions(provider: Provider, id: string): Promise<ContentVersion[]>
   providerStatus(): Promise<ProviderStatus>
 
+  // -- Servers ------------------------------------------------------------------
+  listServers(): Promise<ServerConfig[]>
+  /** Create (no id) or update a server config. Validated in the main process. */
+  saveServer(input: ServerConfigInput): Promise<ServerConfig>
+  /** Forget a server. Its folder is never touched. */
+  deleteServer(id: string): Promise<void>
+  serverStatuses(): Promise<ServerStatus[]>
+  serverLog(id: string): Promise<ServerLogLine[]>
+  startServer(id: string): Promise<void>
+  /** Graceful: sends "stop", then (local) kills after the configured timeout. */
+  stopServer(id: string): Promise<void>
+  killServer(id: string): Promise<void>
+  sendServerCommand(id: string, command: string): Promise<void>
+  /** SSH: run the status command now. */
+  refreshServer(id: string): Promise<ServerStatus>
+  /** SSH: start or stop streaming the log. */
+  tailServerLog(id: string, on: boolean): Promise<void>
+  testSshConnection(input: Partial<SshServerConfig>): Promise<SshTestResult>
+  inspectServerFolder(dir: string): Promise<ServerFolderInfo>
+  acceptServerEula(id: string): Promise<void>
+  createLocalServer(input: CreateLocalServerInput): Promise<ServerConfig>
+
   // -- OS integration ---------------------------------------------------------
   pickDirectory(): Promise<string | null>
   pickFile(filters: { name: string; extensions: string[] }[]): Promise<string | null>
@@ -191,6 +219,24 @@ export interface OpenforgeApi {
   // -- Streams ----------------------------------------------------------------
   onProgress(cb: (e: ProgressEvent) => void): () => void
   onLog(cb: (e: LogLine) => void): () => void
+  onServerLog(cb: (e: ServerLogLine) => void): () => void
+  onServerStatus(cb: (e: ServerStatus) => void): () => void
+}
+
+/** What the server form sends: a config without the fields the main process assigns. */
+export type ServerConfigInput = (
+  | Omit<Extract<ServerConfig, { kind: 'local' }>, 'id' | 'createdAt'>
+  | Omit<Extract<ServerConfig, { kind: 'ssh' }>, 'id' | 'createdAt'>
+) & { id?: string }
+
+export interface CreateLocalServerInput {
+  name: string
+  /** Folder to create the server in. */
+  dir: string
+  mcVersion: string
+  ramMb: number
+  /** The player accepted the Minecraft EULA; writes eula=true. */
+  acceptEula: boolean
 }
 
 export interface PlayStatus {
@@ -282,6 +328,22 @@ export const IPC = {
   getVersions: 'discover:versions',
   providerStatus: 'discover:status',
 
+  listServers: 'servers:list',
+  saveServer: 'servers:save',
+  deleteServer: 'servers:delete',
+  serverStatuses: 'servers:statuses',
+  serverLog: 'servers:log',
+  startServer: 'servers:start',
+  stopServer: 'servers:stop',
+  killServer: 'servers:kill',
+  sendServerCommand: 'servers:send',
+  refreshServer: 'servers:refresh',
+  tailServerLog: 'servers:tail',
+  testSshConnection: 'servers:testSsh',
+  inspectServerFolder: 'servers:inspectFolder',
+  setServerEula: 'servers:eula',
+  createLocalServer: 'servers:createLocal',
+
   pickDirectory: 'dialog:pickDir',
   pickFile: 'dialog:pickFile',
   openExternal: 'app:openExternal',
@@ -292,5 +354,7 @@ export const IPC = {
   winClose: 'win:close',
 
   progressEvent: 'evt:progress',
-  logEvent: 'evt:log'
+  logEvent: 'evt:log',
+  serverLogEvent: 'evt:serverLog',
+  serverStatusEvent: 'evt:serverStatus'
 } as const

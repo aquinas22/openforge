@@ -513,3 +513,96 @@ export interface CfSearchResult {
   packs: CfMod[]
   pagination: { index: number; pageSize: number; resultCount: number; totalCount: number }
 }
+
+// -- Servers ------------------------------------------------------------------------
+// A local server runs as a child process of Openforge; an SSH server is driven
+// with the system ssh client. Configs live in servers.json in the data folder.
+
+export type ServerKind = 'local' | 'ssh'
+
+export interface LocalServerConfig {
+  id: string
+  kind: 'local'
+  name: string
+  createdAt: string
+  /** The server folder (holds server.properties, world/, logs/). */
+  dir: string
+  /** Run a server jar with Openforge's Java and memory, or the folder's own script. */
+  launch: 'jar' | 'script'
+  /** File name inside `dir`: the jar, or run.bat / run.sh / start.ps1. */
+  file: string
+  /** Empty: automatic (the Java the jar asks for, downloaded if needed). */
+  javaPath: string
+  ramMb: number
+  jvmArgs: string
+  /** After sending "stop", how long to wait before killing the process. */
+  stopTimeoutSec: number
+}
+
+export type SshControl = 'tmux' | 'screen' | 'systemd'
+
+export interface SshServerConfig {
+  id: string
+  kind: 'ssh'
+  name: string
+  createdAt: string
+  host: string
+  port: number
+  user: string
+  /** Private key file; empty uses ssh-agent and the default keys. Passwords are never stored. */
+  identityFile: string
+  control: SshControl
+  /** tmux or screen session name. */
+  session: string
+  /** systemd unit name. */
+  unit: string
+  /** Remote server folder, e.g. ~/server. */
+  serverDir: string
+  /** Start script, run inside serverDir, e.g. ./run.sh. */
+  startScript: string
+  /** Log file, relative to serverDir unless absolute. */
+  logPath: string
+  /** Overrides; empty means the preset for `control`. Run as written. */
+  startCommand: string
+  stopCommand: string
+  statusCommand: string
+  /** Template for sending a console command; {cmd} is replaced, quoted. */
+  sendCommand: string
+  tailCommand: string
+}
+
+export type ServerConfig = LocalServerConfig | SshServerConfig
+
+export type ServerState = 'stopped' | 'starting' | 'running' | 'stopping' | 'unknown' | 'error'
+
+export interface ServerStatus {
+  id: string
+  state: ServerState
+  /** Epoch ms the process started (local) or was first seen running (ssh). */
+  startedAt?: number
+  players?: { online: number; max?: number; names: string[] }
+  message?: string
+  /** SSH: the log tail is streaming. */
+  tailing?: boolean
+  checkedAt?: number
+}
+
+export interface ServerLogLine {
+  serverId: string
+  stream: 'stdout' | 'stderr' | 'system' | 'input'
+  line: string
+  ts: number
+}
+
+export interface SshTestResult {
+  ok: boolean
+  kind: 'ok' | 'timeout' | 'dns' | 'refused' | 'hostkey' | 'auth' | 'key' | 'missing-ssh' | 'other'
+  message: string
+}
+
+export interface ServerFolderInfo {
+  exists: boolean
+  jars: string[]
+  scripts: string[]
+  eulaAccepted: boolean
+}

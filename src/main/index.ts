@@ -14,6 +14,8 @@ const isolatedUserData = !app.isPackaged ? process.env['OPENFORGE_USER_DATA'] : 
 if (isolatedUserData) app.setPath('userData', isolatedUserData)
 
 let mainWindow: BrowserWindow | null = null
+let shutdownServers: (() => Promise<void>) | null = null
+let quitting = false
 
 function createWindow(): void {
   const iconPath = app.isPackaged
@@ -70,12 +72,22 @@ app.whenReady().then(() => {
     migrateLegacyUserData((msg) => console.log('[Openforge]', msg))
     removeLegacyAuthCredential((msg) => console.log('[Openforge]', msg))
   }
-  registerIpc(() => mainWindow)
+  shutdownServers = registerIpc(() => mainWindow).shutdown
   createWindow()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+// Local Minecraft servers are child processes: give them a bounded chance to
+// save their worlds ("stop") before the launcher exits.
+app.on('before-quit', (event) => {
+  if (quitting || !shutdownServers) return
+  event.preventDefault()
+  quitting = true
+  const deadline = new Promise((resolve) => setTimeout(resolve, 25_000))
+  void Promise.race([shutdownServers().catch(() => undefined), deadline]).finally(() => app.quit())
 })
 
 app.on('window-all-closed', () => {

@@ -16,7 +16,7 @@ import { explainError, FIX_LABEL, type FixAction } from '@shared/errors'
 import { api } from '../api'
 import { cleanError } from '../util'
 
-export type Route = 'library' | 'discover' | 'settings'
+export type Route = 'library' | 'discover' | 'servers' | 'settings'
 export type DetailTab = 'overview' | 'setup' | 'worlds' | 'manage'
 /** The instance editor's tabs: one per content kind, then the profile's settings. */
 export type EditorTab = 'mod' | 'resourcepack' | 'shader' | 'datapack' | 'settings'

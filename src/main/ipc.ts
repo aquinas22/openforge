@@ -49,6 +49,7 @@ import {
   saveSettings
 } from './core/store'
 import { applySettingsPatch } from '@shared/settings'
+import { registerServerIpc } from './servers-ipc'
 import { AccountStore } from './core/accounts'
 import { discoverJava, pickJava, probeJava } from './core/java'
 import {
@@ -97,7 +98,7 @@ import { checkOfflinePlayAllowed, detectLauncherInstall } from './core/ownership
 import { probeUrl, TlsInterceptionError } from './core/http'
 import { applyProxySettings } from './core/network'
 
-export function registerIpc(getWindow: () => BrowserWindow | null): void {
+export function registerIpc(getWindow: () => BrowserWindow | null): { shutdown: () => Promise<void> } {
   let settings = loadSettings()
   let instances = loadInstances()
   const accounts = new AccountStore()
@@ -1238,6 +1239,14 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
 
   // Surface pack-index state for the UI's "tracked pack" badge.
   ipcMain.handle('pack:index', (_e, id: string) => readPackIndex(instanceDirOf(id)))
+
+  // -- Servers ------------------------------------------------------------------
+  const servers = registerServerIpc({
+    getWindow,
+    maxRamMb,
+    resolveJava: async (major) => (await resolveJava(major, null).catch(() => null))?.path ?? null
+  })
+  return { shutdown: () => servers.shutdown() }
 }
 
 function loaderLabelOf(loader: LoaderType): string {

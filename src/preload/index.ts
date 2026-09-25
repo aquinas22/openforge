@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC } from '../shared/ipc'
 import type { OpenforgeApi } from '../shared/ipc'
-import type { LogLine, ProgressEvent } from '../shared/types'
+import type { LogLine, ProgressEvent, ServerLogLine, ServerStatus } from '../shared/types'
 
 /** Subscribe to a main-process broadcast, returning an unsubscribe function. */
 function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
@@ -77,6 +77,22 @@ const api: OpenforgeApi = {
   getVersions: (provider, id) => ipcRenderer.invoke(IPC.getVersions, provider, id),
   providerStatus: () => ipcRenderer.invoke(IPC.providerStatus),
 
+  listServers: () => ipcRenderer.invoke(IPC.listServers),
+  saveServer: (input) => ipcRenderer.invoke(IPC.saveServer, input),
+  deleteServer: (id) => ipcRenderer.invoke(IPC.deleteServer, id),
+  serverStatuses: () => ipcRenderer.invoke(IPC.serverStatuses),
+  serverLog: (id) => ipcRenderer.invoke(IPC.serverLog, id),
+  startServer: (id) => ipcRenderer.invoke(IPC.startServer, id),
+  stopServer: (id) => ipcRenderer.invoke(IPC.stopServer, id),
+  killServer: (id) => ipcRenderer.invoke(IPC.killServer, id),
+  sendServerCommand: (id, command) => ipcRenderer.invoke(IPC.sendServerCommand, id, command),
+  refreshServer: (id) => ipcRenderer.invoke(IPC.refreshServer, id),
+  tailServerLog: (id, on) => ipcRenderer.invoke(IPC.tailServerLog, id, on),
+  testSshConnection: (input) => ipcRenderer.invoke(IPC.testSshConnection, input),
+  inspectServerFolder: (dir) => ipcRenderer.invoke(IPC.inspectServerFolder, dir),
+  acceptServerEula: (id) => ipcRenderer.invoke(IPC.setServerEula, id),
+  createLocalServer: (input) => ipcRenderer.invoke(IPC.createLocalServer, input),
+
   pickDirectory: () => ipcRenderer.invoke(IPC.pickDirectory),
   pickFile: (filters) => ipcRenderer.invoke(IPC.pickFile, filters),
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url),
@@ -87,7 +103,9 @@ const api: OpenforgeApi = {
   closeWindow: () => ipcRenderer.send(IPC.winClose),
 
   onProgress: (cb) => subscribe<ProgressEvent>(IPC.progressEvent, cb),
-  onLog: (cb) => subscribe<LogLine>(IPC.logEvent, cb)
+  onLog: (cb) => subscribe<LogLine>(IPC.logEvent, cb),
+  onServerLog: (cb) => subscribe<ServerLogLine>(IPC.serverLogEvent, cb),
+  onServerStatus: (cb) => subscribe<ServerStatus>(IPC.serverStatusEvent, cb)
 }
 
 contextBridge.exposeInMainWorld('openforge', api)

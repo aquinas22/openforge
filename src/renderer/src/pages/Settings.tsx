@@ -678,9 +678,14 @@ export function Settings(): JSX.Element {
             <kbd>2</kbd>
           </div>
           <div>
-            <span>Open Settings</span>
+            <span>Open Servers</span>
             <kbd>Ctrl</kbd>
             <kbd>3</kbd>
+          </div>
+          <div>
+            <span>Open Settings</span>
+            <kbd>Ctrl</kbd>
+            <kbd>4</kbd>
           </div>
           <div>
             <span>New instance</span>

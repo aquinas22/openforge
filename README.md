@@ -66,6 +66,21 @@ dependencies come along and are listed); toggle, update or remove what is instal
 `.zip` files straight onto a tab. Settings save as you type. Changing the Minecraft version or
 loader first checks every mod against the new target, then switches mods to matching builds.
 
+### Servers
+
+- **Local**: point Openforge at a server folder (a server jar, or a `run.bat` / `run.sh` like Forge
+  and NeoForge servers use), or create a fresh vanilla server from Mojang's server jar. Start and
+  stop it with its own Java and memory, type into a live console, and see status, players online
+  (read from the log) and uptime. Stop is graceful - `stop`, then a kill only after a timeout - and
+  quitting Openforge stops running servers the same way.
+- **Over SSH**: host, port, user and a key file or ssh-agent (no passwords are ever stored). The
+  system OpenSSH client runs with `BatchMode=yes`, a connect timeout and
+  `StrictHostKeyChecking=accept-new`, always with an argument array and never a local shell.
+  tmux, screen or systemd presets (every command can be overridden) start, stop and check the
+  server, send console commands, and stream `logs/latest.log`. **Test connection** names timeouts,
+  refused logins and changed host keys. Everything Openforge puts into a remote command is quoted
+  for a POSIX shell.
+
 ### The engine
 
 - **Real vanilla installs** — live Mojang manifest, client jar, OS-ruled libraries, assets, extracted
@@ -176,6 +191,7 @@ src/
   main/                    Electron main process (Node) — all privileged work
     index.ts               window + lifecycle
     ipc.ts                 IPC orchestration, running-game registry
+    servers-ipc.ts         Servers section: configs, status, console, SSH
     core/
       paths.ts             filesystem layout
       store.ts             JSON persistence (settings / instances) + 1.x migration
@@ -199,6 +215,7 @@ src/
       packinstall.ts       .mrpack + CurseForge pack install, update pruning
       content.ts           mods / texture packs / shaders / data packs
       worlds.ts            world listing + backups
+      servers/             local server process, ssh runner, server log parsing
       official-launcher.ts hand-off to the Minecraft Launcher
   preload/index.ts         contextBridge — exposes window.openforge
   shared/                  types + IPC contract shared by main & renderer

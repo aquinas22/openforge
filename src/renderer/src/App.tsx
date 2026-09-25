@@ -11,11 +11,12 @@ import {
   UserRound,
   X
 } from 'lucide-react'
-import { useStore } from './store/store'
+import { useStore, type Route } from './store/store'
 import { WorldBackground, Avatar, Logo } from './components/bits'
 import { Console, Dock, Rail, TitleBar, Toasts } from './components/shell'
 import { Library } from './pages/Library'
 import { Discover } from './pages/Discover'
+import { Servers } from './pages/Servers'
 import { Settings } from './pages/Settings'
 import { NewInstanceModal } from './pages/NewInstanceModal'
 import { InstanceDetail } from './pages/InstanceDetail'
@@ -218,7 +219,8 @@ const SHORTCUTS: [keys: string[], action: string][] = [
   [['Ctrl', 'Enter'], 'Play the most recent profile'],
   [['Ctrl', '1'], 'Library'],
   [['Ctrl', '2'], 'Discover'],
-  [['Ctrl', '3'], 'Settings'],
+  [['Ctrl', '3'], 'Servers'],
+  [['Ctrl', '4'], 'Settings'],
   [['Ctrl', 'K'], 'Search Discover'],
   [['Ctrl', 'N'], 'New instance'],
   [['Ctrl', 'L'], 'Show or hide the game console'],
@@ -391,9 +393,10 @@ export default function App(): JSX.Element {
         return
       }
 
-      if (event.key === '1' || event.key === '2' || event.key === '3') {
+      const routes: Record<string, Route> = { '1': 'library', '2': 'discover', '3': 'servers', '4': 'settings' }
+      if (routes[event.key]) {
         event.preventDefault()
-        setRoute(event.key === '1' ? 'library' : event.key === '2' ? 'discover' : 'settings')
+        setRoute(routes[event.key])
       } else if (event.key.toLowerCase() === 'n' && !isTyping) {
         event.preventDefault()
         setNewOpen(true)
@@ -425,6 +428,8 @@ export default function App(): JSX.Element {
               <Library onNew={() => setNewOpen(true)} />
             ) : route === 'discover' ? (
               <Discover />
+            ) : route === 'servers' ? (
+              <Servers />
             ) : (
               <Settings />
             )}
