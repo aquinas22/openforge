@@ -17,6 +17,8 @@ import { api } from '../api'
 import { useStore } from '../store/store'
 import type { ContentKind, ContentProject, ContentSort, ContentVersion, Provider } from '@shared/types'
 import { bytes, cleanError, compact, timeAgo } from '../util'
+import { effectiveProvider } from '@shared/settings'
+import { SourcePicker } from '../components/SourcePicker'
 
 const KINDS: { key: ContentKind; label: string; blurb: string; icon: JSX.Element }[] = [
   { key: 'modpack', label: 'Modpacks', blurb: 'Complete curated worlds', icon: <Package size={15} /> },
@@ -314,6 +316,7 @@ function ProjectDrawer({
 export function Discover(): JSX.Element {
   const providers = useStore((s) => s.providers)
   const defaultProvider = useStore((s) => s.settings?.defaultProvider)
+  const saveSettings = useStore((s) => s.saveSettings)
   const versionsList = useStore((s) => s.versions)
   const importPack = useStore((s) => s.importPack)
   const browseTarget = useStore((s) => s.browseTarget)
@@ -322,7 +325,16 @@ export function Discover(): JSX.Element {
   const openDetail = useStore((s) => s.openDetail)
   const targetInstance = instances.find((instance) => instance.id === browseTarget?.instanceId)
 
-  const [provider, setProvider] = useState<Provider>(defaultProvider ?? 'modrinth')
+  // CurseForge unless it is unavailable or the player last picked Modrinth.
+  const [provider, setProvider] = useState<Provider>(() =>
+    effectiveProvider(defaultProvider, providers.curseforge.available)
+  )
+  const chooseProvider = (next: Provider): void => {
+    setProvider(next)
+    setPage(0)
+    // Remembered as the Discover default; failures only cost the memory.
+    saveSettings({ defaultProvider: next }).catch(() => undefined)
+  }
   const [kind, setKind] = useState<ContentKind>(browseTarget?.kind ?? 'modpack')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<ContentSort>('popular')
@@ -424,41 +436,6 @@ export function Discover(): JSX.Element {
         ))}
       </div>
 
-      <div className="provider-switch" role="tablist" aria-label="Provider">
-        <button
-          role="tab"
-          aria-selected={provider === 'modrinth'}
-          className={provider === 'modrinth' ? 'active' : ''}
-          onClick={() => {
-            setProvider('modrinth')
-            setPage(0)
-          }}
-        >
-          Modrinth
-          <small>No setup needed</small>
-        </button>
-        <button
-          role="tab"
-          aria-selected={provider === 'curseforge'}
-          className={provider === 'curseforge' ? 'active' : ''}
-          onClick={() => {
-            setProvider('curseforge')
-            setPage(0)
-          }}
-        >
-          CurseForge
-          <small>
-            {providers.curseforge.mode === 'builtin'
-              ? 'Ready · fast installs'
-              : providers.curseforge.mode === 'direct'
-                ? 'Your key · fast installs'
-                : providers.curseforge.mode === 'proxy'
-                  ? 'Connected via proxy'
-                  : 'Needs a key'}
-          </small>
-        </button>
-      </div>
-
       <div className="discovery-starters">
         <span>Try</span>
         {(STARTERS[kind] ?? []).map((starter) => (
@@ -477,6 +454,7 @@ export function Discover(): JSX.Element {
       </div>
 
       <div className="discover-search">
+        <SourcePicker value={provider} onChange={chooseProvider} status={providers} />
         <div style={{ position: 'relative', flex: 1 }}>
           <Search size={17} style={{ position: 'absolute', left: 14, top: 13, color: 'var(--muted)' }} />
           <input
