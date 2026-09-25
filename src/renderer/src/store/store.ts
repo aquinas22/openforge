@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import type {
   AccountSummary,
   ContentKind,
-  DeviceCodePrompt,
   Instance,
   JavaInfo,
   JavaRuntimeStatus,
@@ -12,7 +11,7 @@ import type {
   SystemInfo,
   VersionSummary
 } from '@shared/types'
-import type { AuthEvent, CreateInstanceInput, PackInstallInput, ProviderStatus, QuickPlayInput } from '@shared/ipc'
+import type { CreateInstanceInput, PackInstallInput, PlayStatus, ProviderStatus, QuickPlayInput } from '@shared/ipc'
 import { explainError, FIX_LABEL, type FixAction } from '@shared/errors'
 import { api } from '../api'
 import { cleanError } from '../util'
@@ -71,9 +70,8 @@ interface State {
   settingsAnchor: 'advanced' | null
   toasts: Toast[]
 
-  /** Live Microsoft sign-in, while the user finishes it in a browser. */
-  authPrompt: DeviceCodePrompt | null
-  authBusy: boolean
+  /** Offline-play gate and official launcher detection; null until first checked. */
+  playStatus: PlayStatus | null
 
   init(): Promise<void>
   setRoute(r: Route): void
@@ -94,8 +92,8 @@ interface State {
   addOfflineAccount(username: string): Promise<void>
   setActiveAccount(id: string): Promise<void>
   removeAccount(id: string): Promise<void>
-  startMicrosoftLogin(): Promise<void>
-  cancelMicrosoftLogin(): Promise<void>
+  refreshPlayStatus(): Promise<void>
+  openOfficialLauncher(): Promise<void>
 
   createInstance(input: CreateInstanceInput): Promise<void>
   deleteInstance(id: string): Promise<void>
@@ -144,8 +142,7 @@ export const useStore = create<State>((set, get) => ({
   browseTarget: null,
   settingsAnchor: null,
   toasts: [],
-  authPrompt: null,
-  authBusy: false,
+  playStatus: null,
 
   async init() {
     if (initStarted) return // guard against React StrictMode's double effect run
@@ -183,20 +180,6 @@ export const useStore = create<State>((set, get) => ({
       })
     })
 
-    api.onAuthEvent((event: AuthEvent) => {
-      if (event.kind === 'success') {
-        set({ authPrompt: null, authBusy: false })
-        get().toast(`Signed in as ${event.username}`, 'success')
-        get().refreshAccounts()
-      } else if (event.kind === 'error') {
-        set({ authPrompt: null, authBusy: false })
-        get().toast(event.message, 'error')
-        get().refreshAccounts()
-      } else if (event.kind === 'cancelled') {
-        set({ authPrompt: null, authBusy: false })
-      }
-    })
-
     const [settings, systemInfo, accounts, instances, providers] = await Promise.all([
       api.getSettings(),
       api.getSystemInfo(),
@@ -206,6 +189,10 @@ export const useStore = create<State>((set, get) => ({
     ])
     set({ settings, systemInfo, accounts, instances, providers, ready: true })
 
+    get().refreshPlayStatus()
+    // Signing in to the official launcher happens outside Openforge; look
+    // again whenever the player comes back to this window.
+    window.addEventListener('focus', () => get().refreshPlayStatus())
     get().refreshJava()
     // The version manifest is nice-to-have; a blocked network must not stop the
     // launcher from opening and showing what is already installed.
@@ -246,6 +233,9 @@ export const useStore = create<State>((set, get) => ({
         break
       case 'accounts':
         set({ accountsOpen: true })
+        break
+      case 'launcher':
+        s.openOfficialLauncher()
         break
       case 'repair':
         if (instanceId) s.repair(instanceId)
@@ -306,19 +296,20 @@ export const useStore = create<State>((set, get) => ({
   async removeAccount(id) {
     set({ accounts: await api.removeAccount(id) })
   },
-  async startMicrosoftLogin() {
-    set({ authBusy: true })
+  async refreshPlayStatus() {
     try {
-      const prompt = await api.startMicrosoftLogin()
-      set({ authPrompt: prompt })
-    } catch (e) {
-      set({ authBusy: false })
-      get().toast(cleanError(e), 'error')
+      set({ playStatus: await api.playStatus() })
+    } catch {
+      /* keep the last answer */
     }
   },
-  async cancelMicrosoftLogin() {
-    await api.cancelMicrosoftLogin()
-    set({ authPrompt: null, authBusy: false })
+  async openOfficialLauncher() {
+    try {
+      await api.openOfficialLauncher()
+      get().toast('Opening the Minecraft Launcher…', 'info')
+    } catch (e) {
+      get().toast(cleanError(e), 'error')
+    }
   },
 
   async createInstance(input) {

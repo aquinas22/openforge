@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC } from '../shared/ipc'
-import type { AuthEvent, OpenforgeApi } from '../shared/ipc'
+import type { OpenforgeApi } from '../shared/ipc'
 import type { LogLine, ProgressEvent } from '../shared/types'
 
 /** Subscribe to a main-process broadcast, returning an unsubscribe function. */
@@ -20,8 +20,9 @@ const api: OpenforgeApi = {
   addOfflineAccount: (username) => ipcRenderer.invoke(IPC.addOfflineAccount, username),
   setActiveAccount: (id) => ipcRenderer.invoke(IPC.setActiveAccount, id),
   removeAccount: (id) => ipcRenderer.invoke(IPC.removeAccount, id),
-  startMicrosoftLogin: () => ipcRenderer.invoke(IPC.startMicrosoftLogin),
-  cancelMicrosoftLogin: () => ipcRenderer.invoke(IPC.cancelMicrosoftLogin),
+
+  playStatus: () => ipcRenderer.invoke(IPC.playStatus),
+  openOfficialLauncher: () => ipcRenderer.invoke(IPC.openOfficialLauncher),
 
   discoverJava: () => ipcRenderer.invoke(IPC.discoverJava),
   javaRuntimes: () => ipcRenderer.invoke(IPC.javaRuntimes),
@@ -86,8 +87,7 @@ const api: OpenforgeApi = {
   closeWindow: () => ipcRenderer.send(IPC.winClose),
 
   onProgress: (cb) => subscribe<ProgressEvent>(IPC.progressEvent, cb),
-  onLog: (cb) => subscribe<LogLine>(IPC.logEvent, cb),
-  onAuthEvent: (cb) => subscribe<AuthEvent>(IPC.authEvent, cb)
+  onLog: (cb) => subscribe<LogLine>(IPC.logEvent, cb)
 }
 
 contextBridge.exposeInMainWorld('openforge', api)

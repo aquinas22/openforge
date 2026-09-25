@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import type { Instance, Settings } from '@shared/types'
 import { GamePaths } from './paths'
+import { detectLauncherInstall } from './ownership'
 
 const execFileAsync = promisify(execFile)
 
@@ -25,7 +26,13 @@ interface LauncherProfiles {
   [key: string]: unknown
 }
 
-function minecraftDir(): string {
+/** The official launcher's data folder (%APPDATA%\.minecraft on Windows). */
+export function minecraftDir(): string {
+  // Development/demo only, like OPENFORGE_USER_DATA in index.ts: an isolated,
+  // unpackaged run can point at a stand-in folder so tests never read or write
+  // the real launcher's files. Packaged builds ignore both variables.
+  const standIn = process.env['OPENFORGE_MINECRAFT_DIR']
+  if (!app.isPackaged && process.env['OPENFORGE_USER_DATA'] && standIn) return standIn
   if (process.platform === 'win32') return join(app.getPath('appData'), '.minecraft')
   if (process.platform === 'darwin') return join(app.getPath('home'), 'Library', 'Application Support', 'minecraft')
   return join(app.getPath('home'), '.minecraft')
@@ -111,18 +118,9 @@ export async function registerOfficialProfile(
 
 export async function openOfficialLauncher(): Promise<void> {
   if (process.platform === 'win32') {
-    const programFiles = process.env.ProgramFiles
-    const programFilesX86 = process.env['ProgramFiles(x86)']
-    const localAppData = process.env.LOCALAPPDATA
-    const executables = [
-      programFiles && join(programFiles, 'Minecraft Launcher', 'MinecraftLauncher.exe'),
-      programFilesX86 && join(programFilesX86, 'Minecraft Launcher', 'MinecraftLauncher.exe'),
-      localAppData && join(localAppData, 'Programs', 'Minecraft Launcher', 'MinecraftLauncher.exe')
-    ].filter((candidate): candidate is string => !!candidate)
-
-    const executable = executables.find(existsSync)
-    if (executable) {
-      const child = spawn(executable, [], { detached: true, stdio: 'ignore' })
+    const install = detectLauncherInstall(process.env)
+    if (install.kind === 'legacy' && install.path) {
+      const child = spawn(install.path, [], { detached: true, stdio: 'ignore' })
       child.unref()
       return
     }

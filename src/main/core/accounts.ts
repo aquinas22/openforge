@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AccountSummary, StoredAccount } from '@shared/types'
 import { offlineUuid } from './auth'
+import { MICROSOFT_SIGN_IN_ENABLED } from './features'
 import {
   authenticateMinecraft,
   MicrosoftAuthError,
@@ -107,8 +108,18 @@ export class AccountStore {
     write(this.data)
   }
 
+  /**
+   * Accounts the launcher can use right now. While Microsoft sign-in is off,
+   * saved Microsoft accounts stay in the file but are not offered.
+   */
+  private usable(): AccountRecord[] {
+    return MICROSOFT_SIGN_IN_ENABLED
+      ? this.data.accounts
+      : this.data.accounts.filter((account) => account.kind !== 'microsoft')
+  }
+
   list(): AccountSummary[] {
-    return this.data.accounts.map((account) => ({
+    return this.usable().map((account) => ({
       id: account.id,
       kind: account.kind,
       username: account.username,
@@ -128,7 +139,7 @@ export class AccountStore {
   }
 
   private find(id: string): AccountRecord {
-    const account = this.data.accounts.find((entry) => entry.id === id)
+    const account = this.usable().find((entry) => entry.id === id)
     if (!account) throw new Error('Account not found.')
     return account
   }
@@ -141,8 +152,9 @@ export class AccountStore {
   }
 
   remove(id: string): void {
+    this.find(id)
     this.data.accounts = this.data.accounts.filter((account) => account.id !== id)
-    if (this.data.activeId === id) this.data.activeId = this.data.accounts[0]?.id ?? null
+    if (this.data.activeId === id) this.data.activeId = this.usable()[0]?.id ?? null
     this.persist()
   }
 
@@ -205,6 +217,9 @@ export class AccountStore {
    */
   async resolveForLaunch(id: string, msClientId: string): Promise<LaunchAccount> {
     const account = this.find(id)
+    if (account.kind === 'microsoft' && !MICROSOFT_SIGN_IN_ENABLED) {
+      throw new MicrosoftAuthError('Microsoft sign-in is not available in this version.', 'disabled')
+    }
     if (account.kind === 'offline') {
       return {
         username: account.username,
@@ -268,7 +283,15 @@ export class AccountStore {
    * does not silently lose the player's identity (and their worlds with it).
    */
   migrateLegacyUsername(username: string): void {
-    if (this.data.accounts.length > 0) return
+    if (this.data.accounts.length > 0) {
+      // Someone whose active account was Microsoft lands on an offline profile
+      // (if they have one) rather than on "no account".
+      if (!this.active() && this.usable()[0]) {
+        this.data.activeId = this.usable()[0].id
+        this.persist()
+      }
+      return
+    }
     this.addOffline(username || 'Player')
   }
 }

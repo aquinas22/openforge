@@ -6,8 +6,22 @@ import { api } from '../api'
 import { useStore, type Route } from '../store/store'
 import { Avatar, Logo, Sprite, sprites } from './bits'
 
+/** What pressing Play will do, in a few words, for the title bar and the rail. */
+function usePlayIdentity(): { text: string; ok: boolean; known: boolean } {
+  const account = useStore((s) => s.accounts.find((entry) => entry.active))
+  const launchMode = useStore((s) => s.settings?.launchMode)
+  const playStatus = useStore((s) => s.playStatus)
+  if (launchMode === 'official') return { text: 'Via Minecraft Launcher', ok: true, known: true }
+  if (!playStatus) return { text: account ? 'Offline profile' : 'No profile yet', ok: false, known: false }
+  if (!playStatus.offline.allowed) return { text: 'Launcher account needed', ok: false, known: true }
+  return { text: account ? 'Offline play' : 'No profile yet', ok: Boolean(account), known: true }
+}
+
 export function TitleBar(): JSX.Element {
   const setShortcutsOpen = useStore((s) => s.setShortcutsOpen)
+  const setAccountsOpen = useStore((s) => s.setAccountsOpen)
+  const account = useStore((s) => s.accounts.find((entry) => entry.active))
+  const identity = usePlayIdentity()
   return (
     <div className="titlebar">
       <div className="brand row">
@@ -16,6 +30,17 @@ export function TitleBar(): JSX.Element {
         <small>Minecraft launcher</small>
       </div>
       <div className="spacer" />
+      {identity.known && (
+        <button
+          className={`titlebar-play${identity.ok ? '' : ' warn'}`}
+          onClick={() => setAccountsOpen(true)}
+          title="How you play"
+        >
+          <i className={`status-dot${identity.ok ? '' : ' offline'}`} />
+          {identity.text}
+          {identity.ok && account && identity.text === 'Offline play' ? <strong>{account.username}</strong> : null}
+        </button>
+      )}
       <div className="win-controls">
         <button className="win-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}>
           <Keyboard size={15} />
@@ -51,18 +76,8 @@ export function Rail({ onAccount, onNew }: { onAccount: () => void; onNew: () =>
   const route = useStore((s) => s.route)
   const setRoute = useStore((s) => s.setRoute)
   const account = useStore((s) => s.accounts.find((entry) => entry.active))
-  const launchMode = useStore((s) => s.settings?.launchMode)
   // What the player is about to launch as, in three words.
-  const identity = !account
-    ? 'No account yet'
-    : launchMode === 'official'
-      ? 'Via Minecraft Launcher'
-      : account.kind === 'microsoft'
-        ? account.needsReauth
-          ? 'Sign in again'
-          : 'Microsoft · online'
-        : 'Offline profile'
-  const online = Boolean(account && (launchMode === 'official' || (account.kind === 'microsoft' && !account.needsReauth)))
+  const { text: identity, ok: online } = usePlayIdentity()
   return (
     <nav className="rail">
       <div className="rail-section-label">Workspace</div>
@@ -92,16 +107,12 @@ export function Rail({ onAccount, onNew }: { onAccount: () => void; onNew: () =>
         </span>
       </button>
       <div className="rail-spacer" />
-      <button className="rail-account" onClick={onAccount} title="Manage accounts">
+      <button className="rail-account" onClick={onAccount} title="How you play">
         <span className="rail-avatar">
-          {account?.avatarUrl ? (
-            <img src={account.avatarUrl} alt="" width={40} height={40} className="account-skin" />
-          ) : (
-            <Avatar name={account?.username ?? 'Player'} size={40} />
-          )}
+          <Avatar name={account?.username ?? 'Player'} size={40} />
         </span>
         <span className="rail-copy">
-          <strong>{account?.username ?? 'Add an account'}</strong>
+          <strong>{account?.username ?? 'Pick a name'}</strong>
           <small>
             <i className={`status-dot${online ? '' : ' offline'}`} /> {identity}
           </small>

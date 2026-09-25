@@ -104,8 +104,12 @@ export interface OpenforgeApi {
   addOfflineAccount(username: string): Promise<AccountSummary[]>
   setActiveAccount(id: string): Promise<AccountSummary[]>
   removeAccount(id: string): Promise<AccountSummary[]>
-  startMicrosoftLogin(): Promise<DeviceCodePrompt>
-  cancelMicrosoftLogin(): Promise<void>
+
+  // -- How the game is played ---------------------------------------------------
+  /** Whether offline play is allowed here, and whether the official launcher is installed. */
+  playStatus(): Promise<PlayStatus>
+  /** Open the official Minecraft Launcher (legacy install or Microsoft Store app). */
+  openOfficialLauncher(): Promise<void>
 
   // -- Java -------------------------------------------------------------------
   discoverJava(): Promise<JavaInfo[]>
@@ -187,8 +191,12 @@ export interface OpenforgeApi {
   // -- Streams ----------------------------------------------------------------
   onProgress(cb: (e: ProgressEvent) => void): () => void
   onLog(cb: (e: LogLine) => void): () => void
-  /** Fires while a Microsoft sign-in is waiting on the browser. */
-  onAuthEvent(cb: (e: AuthEvent) => void): () => void
+}
+
+export interface PlayStatus {
+  /** The ownership gate for offline play (see main/core/ownership.ts). */
+  offline: { allowed: boolean; reason: string; profileNames: string[] }
+  launcher: { installed: boolean; kind: 'legacy' | 'store' | null }
 }
 
 export interface AddFilesResult {
@@ -199,6 +207,10 @@ export interface AddFilesResult {
 
 export type InstanceSubfolder = 'mods' | 'config' | 'resourcepacks' | 'shaderpacks' | 'saves' | 'logs' | 'crash-reports'
 
+/**
+ * Events of the Microsoft device-code sign-in. Only used by main/msauth-ipc.ts,
+ * which is not registered while Microsoft sign-in is switched off.
+ */
 export type AuthEvent =
   | { kind: 'prompt'; prompt: DeviceCodePrompt }
   | { kind: 'success'; username: string }
@@ -215,8 +227,9 @@ export const IPC = {
   addOfflineAccount: 'accounts:addOffline',
   setActiveAccount: 'accounts:setActive',
   removeAccount: 'accounts:remove',
-  startMicrosoftLogin: 'accounts:msStart',
-  cancelMicrosoftLogin: 'accounts:msCancel',
+
+  playStatus: 'play:status',
+  openOfficialLauncher: 'play:openLauncher',
 
   discoverJava: 'java:discover',
   javaRuntimes: 'java:runtimes',
@@ -279,6 +292,5 @@ export const IPC = {
   winClose: 'win:close',
 
   progressEvent: 'evt:progress',
-  logEvent: 'evt:log',
-  authEvent: 'evt:auth'
+  logEvent: 'evt:log'
 } as const

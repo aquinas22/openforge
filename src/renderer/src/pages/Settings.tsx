@@ -4,7 +4,6 @@ import {
   Cpu,
   Download,
   FolderOpen,
-  Globe,
   HardDrive,
   Keyboard,
   Loader2,
@@ -160,6 +159,8 @@ export function Settings(): JSX.Element {
   const toast = useStore((s) => s.toast)
   const settingsAnchor = useStore((s) => s.settingsAnchor)
   const clearSettingsAnchor = useStore((s) => s.clearSettingsAnchor)
+  const playStatus = useStore((s) => s.playStatus)
+  const openOfficialLauncher = useStore((s) => s.openOfficialLauncher)
 
   const { form, change, flush, state } = useAutoSave()
   const [checks, setChecks] = useState<NetworkCheck[] | null>(null)
@@ -215,13 +216,13 @@ export function Settings(): JSX.Element {
             [
               [
                 'direct',
-                'Direct · Openforge launches it',
-                'Runs the game itself using the account you selected. Microsoft accounts get full online play; offline profiles stay local.'
+                'Offline - Openforge starts it',
+                'Fast, with your offline profile. Needs an account that owns Minecraft signed in to the official launcher on this PC. Single-player, LAN and offline-mode servers.'
               ],
               [
                 'official',
-                'Hand off · Minecraft Launcher',
-                'Registers the instance as an installation and opens the official launcher, which handles sign-in and starts the game.'
+                'Minecraft Launcher - hand off',
+                'Openforge prepares the instance and opens the official launcher, which signs you in with Microsoft. Online servers and Realms.'
               ]
             ] as [LaunchMode, string, string][]
           ).map(([id, title, detail]) => (
@@ -241,36 +242,19 @@ export function Settings(): JSX.Element {
             </button>
           ))}
         </div>
-        <div className="hint" style={{ marginTop: 10 }}>
-          Accounts are managed from the account button at the bottom of the sidebar.
-        </div>
-      </Section>
-
-      <Section icon={<User size={18} />} title="Microsoft sign-in">
-        <div className="field">
-          <label>Azure application (client) ID</label>
-          <input
-            className="input"
-            placeholder="00000000-0000-0000-0000-000000000000"
-            value={form.msClientId}
-            onChange={(e) => type('msClientId', e.target.value.trim())}
-            onBlur={flush}
-          />
-          <div className="hint">
-            Microsoft only grants Minecraft sign-in to a registered application, and Openforge ships
-            no shared one — so signing in natively needs an app ID of your own. Create a free Azure
-            app (personal Microsoft accounts, public client, device-code flow enabled) and paste its
-            client ID here. Leave it empty to use the Minecraft Launcher hand-off above instead.
+        {playStatus && (
+          <div className={`hint play-status-hint${playStatus.offline.allowed ? '' : ' warn'}`} style={{ marginTop: 10 }}>
+            {playStatus.offline.allowed ? 'Offline play is available: ' : 'Offline play is locked: '}
+            {playStatus.offline.reason}{' '}
+            {!playStatus.offline.allowed && (
+              <button className="link-button" onClick={() => openOfficialLauncher()}>
+                Open Minecraft Launcher
+              </button>
+            )}
           </div>
-          <button
-            className="btn sm"
-            style={{ marginTop: 10 }}
-            onClick={() =>
-              api.openExternal('https://learn.microsoft.com/en-us/minecraft/creator/documents/minecraftauthentication')
-            }
-          >
-            <Globe size={14} /> How to register an app
-          </button>
+        )}
+        <div className="hint" style={{ marginTop: 6 }}>
+          Your offline name is set from the profile button at the bottom of the sidebar.
         </div>
       </Section>
 

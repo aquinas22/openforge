@@ -26,7 +26,6 @@ import { LOADERS } from '@shared/types'
 import { IPC } from '@shared/ipc'
 import type {
   AddFilesResult,
-  AuthEvent,
   ContentSearchInput,
   CreateInstanceInput,
   InstallContentInput,
@@ -34,6 +33,7 @@ import type {
   LaunchResult,
   PackInstallInput,
   PackUpdateInfo,
+  PlayStatus,
   ProviderStatus,
   QuickPlayInput
 } from '@shared/ipc'
@@ -50,7 +50,6 @@ import {
 } from './core/store'
 import { applySettingsPatch } from '@shared/settings'
 import { AccountStore } from './core/accounts'
-import { startDeviceCode, pollForTokens, authenticateMinecraft, MicrosoftAuthError } from './core/msauth'
 import { discoverJava, pickJava, probeJava } from './core/java'
 import {
   ensureRuntime,
@@ -93,7 +92,8 @@ import {
   updateAll
 } from './core/content'
 import { backupWorld, listWorlds } from './core/worlds'
-import { openOfficialLauncher, registerOfficialProfile } from './core/official-launcher'
+import { minecraftDir, openOfficialLauncher, registerOfficialProfile } from './core/official-launcher'
+import { checkOfflinePlayAllowed, detectLauncherInstall } from './core/ownership'
 import { probeUrl, TlsInterceptionError } from './core/http'
 import { applyProxySettings } from './core/network'
 
@@ -456,51 +456,22 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     return accounts.list()
   })
 
-  // A sign-in runs in the background while the user completes it in a browser.
-  let signInAbort: AbortController | null = null
-  const sendAuth = (event: AuthEvent): void => send(IPC.authEvent, event)
+  // Microsoft sign-in is switched off (core/features.ts); its IPC lives,
+  // unregistered, in msauth-ipc.ts.
 
-  ipcMain.handle(IPC.startMicrosoftLogin, async () => {
-    signInAbort?.abort()
-    const controller = new AbortController()
-    signInAbort = controller
-
-    const start = await startDeviceCode(settings.msClientId)
-    const prompt = {
-      userCode: start.userCode,
-      verificationUri: start.verificationUri,
-      expiresInSeconds: start.expiresIn,
-      message: start.message
-    }
-
-    void (async () => {
-      try {
-        const tokens = await pollForTokens(settings.msClientId, start, { signal: controller.signal })
-        const session = await authenticateMinecraft(tokens.accessToken)
-        accounts.addMicrosoft(session, tokens)
-        if (!accounts.encryptionAvailable) {
-          sendAuth({
-            kind: 'error',
-            message:
-              `Signed in as ${session.username}, but this system offers no secure credential storage, ` +
-              'so the session will not be remembered after you quit.'
-          })
-        }
-        sendAuth({ kind: 'success', username: session.username })
-      } catch (err) {
-        if ((err as MicrosoftAuthError).code === 'cancelled') sendAuth({ kind: 'cancelled' })
-        else sendAuth({ kind: 'error', message: (err as Error).message })
-      } finally {
-        if (signInAbort === controller) signInAbort = null
+  // -- How the game is played ---------------------------------------------------
+  ipcMain.handle(
+    IPC.playStatus,
+    (): PlayStatus => {
+      const gate = checkOfflinePlayAllowed(minecraftDir())
+      const install = detectLauncherInstall(process.env)
+      return {
+        offline: { allowed: gate.allowed, reason: gate.reason, profileNames: gate.profileNames },
+        launcher: { installed: install.installed, kind: install.kind }
       }
-    })()
-
-    return prompt
-  })
-  ipcMain.handle(IPC.cancelMicrosoftLogin, () => {
-    signInAbort?.abort()
-    signInAbort = null
-  })
+    }
+  )
+  ipcMain.handle(IPC.openOfficialLauncher, () => openOfficialLauncher())
 
   // -- Java -------------------------------------------------------------------
   ipcMain.handle(IPC.discoverJava, async () => discoverJava(settings.javaPath, await managedJavaPaths()))
@@ -663,9 +634,26 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
           return { ok: true }
         }
 
+        // Offline play needs evidence that Minecraft was bought on this PC.
+        const gate = checkOfflinePlayAllowed(minecraftDir())
+        if (!gate.allowed) {
+          const msg =
+            `${gate.reason} Sign in to the official Minecraft Launcher once with an account that owns ` +
+            'Java Edition, then press Play again - or play through the Minecraft Launcher.'
+          sendProgress({
+            instanceId: id,
+            phase: 'error',
+            label: 'Minecraft account needed',
+            progress: -1,
+            detail: msg,
+            action: 'launcher'
+          })
+          return { ok: false, error: msg, handled: true }
+        }
+
         const active = accounts.active()
         if (!active) {
-          const msg = 'Add an account before playing. Open the account menu to sign in or create an offline profile.'
+          const msg = 'Add an offline profile before playing. Open the account menu to pick a name.'
           sendProgress({
             instanceId: id,
             phase: 'error',
@@ -699,7 +687,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
         const java = await resolveJava(version.javaVersion?.majorVersion ?? 8, inst, reporterFor(id, 'java'))
         logFor(id, 'system', `[Openforge] Using Java ${java.majorVersion} at ${java.path}`)
 
-        step('account', active.kind === 'microsoft' ? 'Checking Microsoft session' : `Playing as ${active.username}`)
+        step('account', `Playing as ${active.username}`)
         const account = await accounts.resolveForLaunch(active.id, settings.msClientId)
         if (account.userType === 'legacy' && quickPlay?.type === 'multiplayer') {
           logFor(

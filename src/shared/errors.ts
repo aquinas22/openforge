@@ -3,7 +3,7 @@
  * from the game log) and the renderer (a fix button on error toasts).
  */
 
-export type FixAction = 'java' | 'accounts' | 'repair' | 'memory' | 'network' | 'console' | 'content' | 'jvm'
+export type FixAction = 'java' | 'accounts' | 'launcher' | 'repair' | 'memory' | 'network' | 'console' | 'content' | 'jvm'
 
 export interface Explanation {
   /** One sentence the player can act on. */
@@ -17,6 +17,7 @@ export interface Explanation {
 export const FIX_LABEL: Record<FixAction, string> = {
   java: 'Open Java settings',
   accounts: 'Open accounts',
+  launcher: 'Open Minecraft Launcher',
   repair: 'Repair files',
   memory: 'Adjust memory',
   network: 'Connection check',
@@ -37,7 +38,8 @@ const LAUNCH_RULES: [RegExp, Explanation][] = [
     'Turn on "Manage Java automatically" or install the matching runtime from Settings.',
     'java'
   ),
-  rule(/Add an account|No account selected/i, 'Add a Microsoft account or an offline profile, then press Play again.', 'accounts'),
+  rule(/Add an (offline profile|account)|No account selected/i, 'Add an offline profile, then press Play again.', 'accounts'),
+  rule(/Minecraft Launcher account|account that owns/i, 'Sign in to the official Minecraft Launcher once with an account that owns Java Edition.', 'launcher'),
   rule(/sign in to Microsoft again|reauth/i, 'Sign in to Microsoft again from the account menu.', 'accounts'),
   rule(/does not own Minecraft|entitle/i, 'This Microsoft account has no Java Edition licence. Use an offline profile or another account.', 'accounts'),
   rule(/trusted HTTPS connection|certificate/i, 'Your network is intercepting HTTPS. The connection check in Settings (Content providers, Advanced) explains the fix.', 'network'),

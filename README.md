@@ -1,7 +1,8 @@
 # Openforge
 
 A beautiful, fast Minecraft launcher for Windows 11. Modpacks, texture packs, shaders, and mods
-from **both Modrinth and CurseForge**, real Microsoft sign-in, and a Java runtime it manages for
+from **both CurseForge and Modrinth**, offline play for people who own the game, a one-click hand-off
+to the official Minecraft Launcher, and a Java runtime it manages for
 you — so a new player can go from a fresh install to playing Homestead or All the Mods without
 installing a JDK, pasting an API key, or reading a wiki page.
 
@@ -16,8 +17,9 @@ Built with Electron + React + TypeScript.
 - **Two providers, one interface.** Modrinth and CurseForge are normalized into the same shapes, so
   a pack, a mod, a texture pack, and a shader all look and install the same way regardless of where
   they came from.
-- **Modrinth needs no setup.** No API key, no proxy, no account. This is the default source, and it
-  carries most modern packs — Homestead included.
+- **CurseForge first, Modrinth always.** Release builds carry a CurseForge key, so CurseForge is the
+  default source; Discover and the instance editor fall back to Modrinth (no key, no setup) only
+  while CurseForge is unavailable, and remember whichever source you pick.
 - **CurseForge installs fast.** With a direct API key, Openforge resolves modpack files through the
   bulk endpoints: a 400-mod pack like All the Mods resolves in one or two requests instead of four
   hundred. That is the difference between an install measured in seconds and one measured in
@@ -42,19 +44,27 @@ and a pack built for one will not start on another. Openforge detects what you a
 including runtimes the official launcher installed — and downloads the right Eclipse Temurin build
 when nothing fits. Checksum-verified, kept beside the game files, removable from Settings.
 
-### Online play, properly
+### Playing
 
-- **Microsoft sign-in** via the OAuth 2.0 device code flow: you finish in your own browser, the
-  launcher never sees a password, and there is no embedded webview. The full chain is implemented —
-  Microsoft identity → Xbox Live → XSTS → Minecraft services — including entitlement and profile
-  checks, silent token refresh, and specific messages for the failures players can actually fix
-  (no Xbox profile, child account, no Java Edition licence).
-- **Tokens are encrypted at rest** with Electron `safeStorage` (DPAPI on Windows), so a copied
-  `accounts.json` is useless on another machine. Where the platform offers no encryption, Openforge
-  refuses to persist the refresh token rather than writing a credential in plain text.
-- **Multiple accounts**, Microsoft and offline side by side, switchable in one click.
+- **Offline, for owners.** Openforge starts the game itself with an offline profile (the UUID is the
+  standard `OfflinePlayer:<name>` MD5 v3, so the same name keeps the same worlds). This is only
+  unlocked on a PC where the official Minecraft Launcher has a signed-in account with a Java Edition
+  profile (`%APPDATA%\.minecraft\launcher_accounts*.json`); otherwise Openforge explains why and
+  offers to open the launcher. Only the presence of such an account is read - never tokens.
+- **Or hand off** to the official Minecraft Launcher (classic install or the Microsoft Store / Xbox
+  app) for online servers and Realms: Openforge prepares the instance and the launcher signs you in.
 - **Quick Play**: jump straight into a saved world or a server address from the instance drawer.
-- **Or hand off** to the official Minecraft Launcher if you would rather it own authentication.
+- **Microsoft sign-in inside Openforge is switched off** until an approved Azure app registration
+  exists. The code is kept, unreachable; [docs/microsoft-auth-plan.md](docs/microsoft-auth-plan.md)
+  is the plan for turning it back on.
+
+### Editing an instance
+
+One **Edit** button opens Mods, Resource packs, Shaders, Data packs and Settings. Search CurseForge
+or Modrinth inline, filtered to the instance's version and loader, and add with one click (required
+dependencies come along and are listed); toggle, update or remove what is installed; drop `.jar` or
+`.zip` files straight onto a tab. Settings save as you type. Changing the Minecraft version or
+loader first checks every mod against the new target, then switches mods to matching builds.
 
 ### The engine
 
@@ -70,7 +80,8 @@ when nothing fits. Checksum-verified, kept beside the game files, removable from
   number you can do nothing about.
 - **Per-instance everything** — own mods, worlds, configs, RAM, JVM flags, and Java override.
 - **Chromium's network stack.** Every request runs through Electron's `net`, so the system proxy,
-  PAC scripts, and this computer's certificate store all apply. Settings → Network runs a per-service
+  PAC scripts, and this computer's certificate store all apply. Settings → Content providers →
+  Advanced runs a per-service
   connection check and names HTTPS interception when it sees it.
 
 ## Design
@@ -144,29 +155,19 @@ Needs Node.js 20+, npm, and Wine. Cross-built artifacts are unsigned and do not 
 configured icon/version resource, so build on Windows when you need final signing and executable
 metadata.
 
-## Setting up Microsoft sign-in
-
-Microsoft grants Minecraft sign-in only to a registered Azure application, and Openforge ships no
-shared client ID of its own. To sign in natively:
-
-1. Create a free app registration in the Azure portal (supported account type: **personal Microsoft
-   accounts**; platform: **public client / native**, with device-code flow allowed).
-2. Paste its **Application (client) ID** into Settings → Microsoft sign-in.
-3. Open the account menu and choose **Sign in** — a code appears, you enter it once in your browser.
-
-Leave the field empty and online play uses the Minecraft Launcher hand-off instead, which needs no
-setup at all.
-
 ## CurseForge setup
 
-Modrinth works with no configuration. CurseForge needs one of:
+Release builds ship a built-in CurseForge key (injected at build time from `OPENFORGE_CF_KEY`,
+never logged, and never sent to the renderer), so CurseForge works with no setup. Builds from source
+without that variable have no key, and Discover uses Modrinth until you add one of these under
+Settings → Content providers → Advanced:
 
-1. **Direct key (recommended)** — paste a free key from <https://console.curseforge.com>. This is the
-   only mode that unlocks bulk resolution, which large packs very much want.
+1. **Your own key** — paste a free key from <https://console.curseforge.com>. It overrides the
+   built-in key and also unlocks bulk resolution, which large packs very much want.
 2. **Proxy** — point Openforge at a ServerCraft-style server that holds the key server-side. It calls
    `/api/cf/search`, `/api/cf/packs/:id`, and `/api/cf/packs/:id/files`.
 
-Openforge never ships an API key inside the desktop app.
+Priority is proxy, then your own key, then the built-in key.
 
 ## Architecture
 
@@ -178,9 +179,11 @@ src/
     core/
       paths.ts             filesystem layout
       store.ts             JSON persistence (settings / instances) + 1.x migration
-      accounts.ts          account book; tokens encrypted with safeStorage
+      accounts.ts          account book (offline profiles; Microsoft accounts kept, hidden)
+      ownership.ts         offline-play gate: official launcher account detection
       auth.ts              deterministic offline UUIDs
-      msauth.ts            Microsoft -> Xbox Live -> XSTS -> Minecraft services
+      msauth.ts            Microsoft -> Xbox Live -> XSTS -> Minecraft (switched off)
+      features.ts          MICROSOFT_SIGN_IN_ENABLED switch
       network.ts           proxy configuration for Chromium's stack
       http.ts              transport, atomic hash-verified downloads, mirrors
       manifest.ts          Mojang version manifest + version JSON types
@@ -207,14 +210,14 @@ every action funnels through the preload bridge into the main process.
 
 ## Known limitations
 
-- **Microsoft sign-in needs your own Azure client ID** (above). This is a Microsoft policy, not a
-  gap in the implementation; the flow itself is complete.
+- **No Microsoft sign-in inside Openforge yet.** New Azure apps need Mojang's approval before they can
+  call the Minecraft services; until then online play goes through the official launcher.
 - **Forge / NeoForge** install by running the official installer, so they need network access and a
   Java matching the Minecraft version. Openforge provisions that automatically.
 - **A few CurseForge projects opt out of third-party distribution.** Those are listed with direct
   links in the instance drawer so you can fetch them by hand; everything else installs normally.
 - **Networks that inspect HTTPS** (many schools and workplaces) will block Mojang, Modrinth, and
-  CurseForge with an untrusted certificate. Openforge reports this precisely in Settings → Network
+  CurseForge with an untrusted certificate. Openforge reports this precisely in its connection check
   and never disables certificate verification to work around it — install the organisation's root
   certificate into the Windows trusted-root store, or use a different network.
 

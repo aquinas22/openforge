@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import {
   Check,
-  Copy,
   ExternalLink,
+  Gamepad2,
   Loader2,
-  LogIn,
+  RefreshCw,
   ShieldCheck,
   Trash2,
   TriangleAlert,
@@ -12,7 +12,6 @@ import {
   X
 } from 'lucide-react'
 import { useStore } from './store/store'
-import { api } from './api'
 import { WorldBackground, Avatar, Logo } from './components/bits'
 import { Console, Dock, Rail, TitleBar, Toasts } from './components/shell'
 import { Library } from './pages/Library'
@@ -24,181 +23,147 @@ import { InstanceEditor } from './pages/InstanceEditor'
 
 function AccountModal({ onClose }: { onClose: () => void }): JSX.Element {
   const accounts = useStore((s) => s.accounts)
-  const settings = useStore((s) => s.settings)
-  const authPrompt = useStore((s) => s.authPrompt)
-  const authBusy = useStore((s) => s.authBusy)
+  const playStatus = useStore((s) => s.playStatus)
+  const launchMode = useStore((s) => s.settings?.launchMode)
   const addOfflineAccount = useStore((s) => s.addOfflineAccount)
   const setActiveAccount = useStore((s) => s.setActiveAccount)
   const removeAccount = useStore((s) => s.removeAccount)
-  const startMicrosoftLogin = useStore((s) => s.startMicrosoftLogin)
-  const cancelMicrosoftLogin = useStore((s) => s.cancelMicrosoftLogin)
-  const setRoute = useStore((s) => s.setRoute)
+  const refreshPlayStatus = useStore((s) => s.refreshPlayStatus)
+  const openOfficialLauncher = useStore((s) => s.openOfficialLauncher)
+  const saveSettings = useStore((s) => s.saveSettings)
   const toast = useStore((s) => s.toast)
 
-  const [name, setName] = useState('Player')
+  const [name, setName] = useState(playStatus?.offline.profileNames[0] ?? 'Player')
+  const [checking, setChecking] = useState(false)
   const valid = /^[A-Za-z0-9_]{1,16}$/.test(name)
-  const hasClientId = Boolean(settings?.msClientId)
+  const allowed = playStatus?.offline.allowed ?? false
+
+  useEffect(() => {
+    refreshPlayStatus()
+  }, [refreshPlayStatus])
 
   return (
     <div className="scrim" onClick={onClose}>
-      <div className="modal account-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="between" style={{ marginBottom: 20 }}>
+      <div className="modal account-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="How you play">
+        <div className="between" style={{ marginBottom: 18 }}>
           <div>
             <div className="eyebrow">Identity</div>
-            <h2 style={{ fontSize: 20 }}>Accounts</h2>
+            <h2 style={{ fontSize: 20 }}>How you play</h2>
           </div>
-          <button className="win-btn" onClick={onClose} aria-label="Close account menu">
+          <button className="win-btn" onClick={onClose} aria-label="Close">
             <X size={18} />
           </button>
         </div>
 
-        {accounts.length > 0 && (
-          <div className="account-list">
-            {accounts.map((account) => (
-              <div key={account.id} className={`account-row${account.active ? ' active' : ''}`}>
-                <button
-                  className="account-pick"
-                  onClick={() => setActiveAccount(account.id)}
-                  aria-pressed={account.active}
-                >
-                  {account.avatarUrl ? (
-                    <img className="account-skin" src={account.avatarUrl} alt="" width={40} height={40} />
-                  ) : (
-                    <Avatar name={account.username} size={40} />
-                  )}
-                  <span className="account-meta">
-                    <strong>{account.username}</strong>
-                    <small>
-                      {account.kind === 'microsoft' ? (
-                        account.needsReauth ? (
-                          <>
-                            <TriangleAlert size={11} /> Sign in again
-                          </>
-                        ) : account.entitled === false ? (
-                          <>
-                            <TriangleAlert size={11} /> No Java Edition licence
-                          </>
-                        ) : (
-                          <>
-                            <i className="status-dot" /> Microsoft · online play
-                          </>
-                        )
-                      ) : (
-                        <>
-                          <i className="status-dot offline" /> Offline profile
-                        </>
-                      )}
-                    </small>
-                  </span>
-                  {account.active && <Check size={16} className="account-check" />}
-                </button>
-                <button
-                  className="win-btn"
-                  title={`Remove ${account.username}`}
-                  onClick={() => removeAccount(account.id)}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
+        {!playStatus ? (
+          <div className="row muted" style={{ gap: 8, marginBottom: 16 }}>
+            <Loader2 size={14} className="spin" /> Looking for a Minecraft Launcher account…
           </div>
-        )}
-
-        <div className="account-section">
-          <div className="account-section-head">
-            <ShieldCheck size={17} />
+        ) : allowed ? (
+          <div className="notice accent play-gate">
+            <ShieldCheck size={16} />
             <div>
-              <strong>Microsoft account</strong>
-              <span>Required for online-mode servers, Realms, and your real skin.</span>
+              <strong>Offline play is ready</strong>
+              <span>{playStatus.offline.reason}</span>
             </div>
           </div>
-
-          {authPrompt ? (
-            <div className="device-code">
-              <p className="dim">
-                Open the page below and enter this code. Openforge finishes the sign-in on its own.
-              </p>
-              <div className="device-code-value">
-                <code>{authPrompt.userCode}</code>
+        ) : (
+          <div className="notice warn play-gate">
+            <TriangleAlert size={16} />
+            <div>
+              <strong>Offline play needs Minecraft on this PC</strong>
+              <span>
+                {playStatus.offline.reason} Openforge only starts the game offline where Minecraft: Java Edition
+                has been bought: open the official Minecraft Launcher and sign in once with the account that owns
+                it, then come back. Nothing is shared with Openforge except that an account exists.
+              </span>
+              <div className="row" style={{ gap: 8, marginTop: 10 }}>
+                <button className="btn sm primary" onClick={() => openOfficialLauncher()}>
+                  <ExternalLink size={14} /> Open Minecraft Launcher
+                </button>
                 <button
                   className="btn sm"
-                  onClick={() => {
-                    navigator.clipboard.writeText(authPrompt.userCode).catch(() => undefined)
-                    toast('Code copied', 'success')
+                  disabled={checking}
+                  onClick={async () => {
+                    setChecking(true)
+                    await refreshPlayStatus()
+                    setChecking(false)
                   }}
                 >
-                  <Copy size={14} /> Copy
+                  {checking ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} Check again
                 </button>
               </div>
-              <div className="row" style={{ gap: 8 }}>
-                <button className="btn primary" onClick={() => api.openExternal(authPrompt.verificationUri)}>
-                  <ExternalLink size={14} /> Open sign-in page
-                </button>
-                <button className="btn ghost" onClick={() => cancelMicrosoftLogin()}>
-                  Cancel
-                </button>
-              </div>
-              <div className="row muted" style={{ gap: 8, marginTop: 10, fontSize: 12 }}>
-                <Loader2 size={13} className="spin" /> Waiting for you to finish in the browser…
-              </div>
+              {!playStatus.launcher.installed && (
+                <small className="muted" style={{ marginTop: 6 }}>
+                  The Minecraft Launcher does not seem to be installed; opening it takes you to the Microsoft Store.
+                </small>
+              )}
             </div>
-          ) : hasClientId ? (
-            <div className="account-setup">
-              <div>
-                <strong>Sign in with Microsoft</strong>
-                <span>
-                  A code appears here; you enter it once in your browser. Openforge never sees your
-                  password, and the session is stored encrypted by Windows.
-                </span>
-              </div>
-              <button className="btn primary sm" disabled={authBusy} onClick={() => startMicrosoftLogin()}>
-                {authBusy ? <Loader2 size={14} className="spin" /> : <LogIn size={14} />} Sign in
-              </button>
-            </div>
-          ) : (
-            <div className="account-setup">
-              <div>
-                <strong>Needs an application ID first</strong>
-                <span>
-                  Microsoft grants Minecraft sign-in only to a registered app. Add your own Azure
-                  client ID in Settings, or keep using the Minecraft Launcher hand-off for online play.
-                </span>
-              </div>
-              <button
-                className="btn sm"
-                onClick={() => {
-                  setRoute('settings')
-                  onClose()
-                }}
-              >
-                Open settings
-              </button>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className="account-section">
           <div className="account-section-head">
             <UserRound size={17} />
             <div>
               <strong>Offline profile</strong>
-              <span>For single-player, LAN, and servers with online mode disabled.</span>
+              <span>Openforge starts the game itself. Single-player, LAN, and servers with online mode off.</span>
             </div>
           </div>
+
+          {accounts.length > 0 && (
+            <div className="account-list">
+              {accounts.map((account) => (
+                <div key={account.id} className={`account-row${account.active ? ' active' : ''}`}>
+                  <button
+                    className="account-pick"
+                    onClick={() => setActiveAccount(account.id)}
+                    aria-pressed={account.active}
+                  >
+                    <Avatar name={account.username} size={36} />
+                    <span className="account-meta">
+                      <strong>{account.username}</strong>
+                      <small>
+                        <i className={`status-dot${allowed ? '' : ' offline'}`} />{' '}
+                        {allowed ? 'Offline profile' : 'Offline profile · locked until a launcher account is found'}
+                      </small>
+                    </span>
+                    {account.active && <Check size={16} className="account-check" />}
+                  </button>
+                  <button
+                    className="win-btn"
+                    title={`Remove ${account.username}`}
+                    aria-label={`Remove ${account.username}`}
+                    onClick={() => removeAccount(account.id)}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="row" style={{ gap: 12 }}>
-            <Avatar name={valid ? name : 'Player'} size={44} />
+            <Avatar name={valid ? name : 'Player'} size={40} />
             <div style={{ flex: 1 }}>
               <input
                 className="input"
                 value={name}
                 maxLength={16}
+                aria-label="Offline username"
                 onChange={(e) => setName(e.target.value)}
+                onKeyDown={async (e) => {
+                  if (e.key === 'Enter' && valid) {
+                    await addOfflineAccount(name)
+                    toast(`Playing as ${name}`, 'success')
+                  }
+                }}
                 style={!valid ? { boxShadow: 'inset 0 0 0 2px var(--danger)' } : undefined}
               />
               <div className="hint" style={{ marginTop: 6 }}>
                 {valid
-                  ? 'Letters, numbers, underscore · up to 16 characters'
-                  : 'Invalid offline name'}
+                  ? 'Letters, numbers, underscore, up to 16 characters. The same name always gets the same UUID, so worlds keep your inventory.'
+                  : 'Use letters, numbers and underscore only (up to 16).'}
               </div>
             </div>
             <button
@@ -209,8 +174,39 @@ function AccountModal({ onClose }: { onClose: () => void }): JSX.Element {
                 toast(`Playing as ${name}`, 'success')
               }}
             >
-              Add
+              {accounts.some((a) => a.username.toLowerCase() === name.toLowerCase()) ? 'Use' : 'Add'}
             </button>
+          </div>
+        </div>
+
+        <div className="account-section">
+          <div className="account-section-head">
+            <Gamepad2 size={17} />
+            <div>
+              <strong>Minecraft Launcher</strong>
+              <span>
+                For online servers, Realms and your own skin. Openforge prepares the instance and hands it to the
+                official launcher, which signs you in with Microsoft.
+              </span>
+            </div>
+          </div>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn sm" onClick={() => openOfficialLauncher()}>
+              <ExternalLink size={14} /> Open Minecraft Launcher
+            </button>
+            {launchMode === 'official' ? (
+              <button className="btn sm ghost" onClick={() => saveSettings({ launchMode: 'direct' })}>
+                Play offline from Openforge instead
+              </button>
+            ) : (
+              <button className="btn sm ghost" onClick={() => saveSettings({ launchMode: 'official' })}>
+                Make Play use the Minecraft Launcher
+              </button>
+            )}
+          </div>
+          <div className="hint" style={{ marginTop: 8 }}>
+            Play currently {launchMode === 'official' ? 'hands off to the Minecraft Launcher' : 'starts the game offline from Openforge'}.
+            You can change this any time in Settings.
           </div>
         </div>
       </div>

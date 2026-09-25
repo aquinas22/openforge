@@ -50,6 +50,7 @@ import { installerUrl, processorOutputs, resolveProfileValue } from '../src/main
 import { stageFromLogLine } from '../src/main/core/launcher'
 import { gcArgs, recommendedRamMb, tunedJvmArgs } from '../src/shared/tuning'
 import { diagnoseCrash, explainError } from '../src/shared/errors'
+import { checkOfflinePlayAllowed, detectLauncherInstall, parseLauncherAccounts, STORE_PACKAGE_FAMILY } from '../src/main/core/ownership'
 import { installContent } from '../src/main/core/content'
 import type { ModrinthClient } from '../src/main/core/modrinth'
 import type { ContentVersion, Instance } from '../src/shared/types'
@@ -970,6 +971,93 @@ async function contentInstallSuite(fixture: Fixture): Promise<void> {
   await rm(instanceDir, { recursive: true, force: true })
 }
 
+// -- Offline identity and the ownership gate -----------------------------------------------
+
+/** Name-based UUID v3 exactly as java.util.UUID.nameUUIDFromBytes builds it. */
+function referenceOfflineUuid(name: string): string {
+  const h = createHash('md5').update(`OfflinePlayer:${name}`, 'utf8').digest()
+  h[6] = (h[6] & 0x0f) | 0x30 // version 3
+  h[8] = (h[8] & 0x3f) | 0x80 // IETF variant
+  const x = h.toString('hex')
+  return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`
+}
+
+function ownershipSuite(): void {
+  section('Offline UUID known vector')
+  // Widely published offline UUID for "Notch".
+  const NOTCH = 'b50ad385-829d-3141-a216-7e7d7539ba7f'
+  ok(referenceOfflineUuid('Notch') === NOTCH, 'MD5 v3 of "OfflinePlayer:Notch" gives the published UUID', referenceOfflineUuid('Notch'))
+  ok(offlineUuid('Notch') === NOTCH, 'the launcher derives the same UUID for Notch', offlineUuid('Notch'))
+  ok(offlineUuid('jeb_') === referenceOfflineUuid('jeb_'), 'and agrees with the reference for another name')
+  ok(offlineUuid('notch') !== NOTCH, 'names are case-sensitive, as in vanilla')
+
+  section('Ownership gate: launcher account files')
+  const SECRET = 'eyJhbGciOiJSUzI1NiJ9.secret-access-token'
+  const classic = JSON.stringify({
+    accounts: {
+      a1b2: {
+        accessToken: SECRET,
+        accessTokenExpiresAt: '2026-10-01T00:00:00Z',
+        eligibleForMigration: false,
+        hasMultipleProfiles: false,
+        legacy: false,
+        localId: 'a1b2',
+        minecraftProfile: { id: '069a79f444e94726a5befca90e38aaf5', name: 'Steve' },
+        persistent: true,
+        remoteId: 'rid',
+        type: 'Xbox',
+        userProperites: [],
+        username: 'someone@example.com'
+      }
+    },
+    activeAccountLocalId: 'a1b2',
+    mojangClientToken: 'client-token'
+  })
+  const parsed = parseLauncherAccounts(classic)
+  ok(parsed.accounts === 1 && parsed.profileNames.join() === 'Steve', 'an account with a Java profile is found', JSON.stringify(parsed))
+  ok(!JSON.stringify(parsed).includes(SECRET) && !JSON.stringify(parsed).includes('example.com'), 'no token or email leaves the parser')
+  ok(parseLauncherAccounts(JSON.stringify({ accounts: {} })).accounts === 0, 'an empty account list is no account')
+  ok(
+    parseLauncherAccounts(JSON.stringify({ accounts: { x: { accessToken: 't', username: 'u@example.com', type: 'Xbox' } } })).accounts === 0,
+    'a signed-in account without a Java Edition profile does not count'
+  )
+  ok(parseLauncherAccounts('{not json').accounts === 0, 'malformed JSON is no account')
+  ok(parseLauncherAccounts('null').accounts === 0 && parseLauncherAccounts('[]').accounts === 0, 'non-object JSON is no account')
+  ok(
+    parseLauncherAccounts(JSON.stringify({ accounts: [{ minecraftProfile: { id: 'abc', name: 'Alex' } }] })).accounts === 1,
+    'an array-shaped account list is read too'
+  )
+  ok(
+    parseLauncherAccounts(JSON.stringify({ accounts: { a: { minecraftProfile: { name: 'Bad Name!<script>' , id: 'x'} } } })).profileNames.length === 0,
+    'odd profile names are counted but never echoed'
+  )
+
+  const none = makeTempDir('gate-none')
+  const noneGate = checkOfflinePlayAllowed(none)
+  ok(!noneGate.allowed && /No Minecraft Launcher account/.test(noneGate.reason), 'no launcher files: offline play is locked', noneGate.reason)
+
+  const empty = makeTempDir('gate-empty')
+  writeFileSync(join(empty, 'launcher_accounts.json'), JSON.stringify({ accounts: {} }))
+  const emptyGate = checkOfflinePlayAllowed(empty)
+  ok(!emptyGate.allowed && /no signed-in account/.test(emptyGate.reason), 'a launcher with no account: locked, with a different reason')
+
+  const store = makeTempDir('gate-store')
+  writeFileSync(join(store, 'launcher_accounts_microsoft_store.json'), classic)
+  const storeGate = checkOfflinePlayAllowed(store)
+  ok(storeGate.allowed && storeGate.profileNames[0] === 'Steve', 'the Microsoft Store launcher file unlocks offline play')
+  ok(!storeGate.reason.includes(SECRET), 'the gate reason carries no token')
+
+  section('Official launcher detection')
+  const env = { ProgramFiles: 'C:/Program Files', 'ProgramFiles(x86)': 'C:/Program Files (x86)', LOCALAPPDATA: 'C:/Users/u/AppData/Local' }
+  const legacyExe = join('C:/Program Files (x86)', 'Minecraft Launcher', 'MinecraftLauncher.exe')
+  ok(detectLauncherInstall(env, (p) => p === legacyExe).kind === 'legacy', 'the legacy MinecraftLauncher.exe is found')
+  ok(
+    detectLauncherInstall(env, (p) => p.endsWith(join('Packages', STORE_PACKAGE_FAMILY))).kind === 'store',
+    'the Microsoft Store / Xbox app package is found'
+  )
+  ok(!detectLauncherInstall(env, () => false).installed, 'nothing installed is reported as such')
+}
+
 async function main(): Promise<void> {
   console.log('Openforge core verification')
   const fixture = await startFixtureServer()
@@ -989,6 +1077,7 @@ async function main(): Promise<void> {
     settingsSuite()
     compatSuite()
     await contentInstallSuite(fixture)
+    ownershipSuite()
     await liveConnectivity()
   } finally {
     fixture.server.close()

@@ -1,7 +1,7 @@
 {
   "name": "openforge",
   "version": "2.1.0",
-  "description": "Openforge — a Minecraft launcher for Windows: Modrinth + CurseForge modpacks, texture packs, shaders, managed Java, and real Microsoft sign-in.",
+  "description": "Openforge — a Minecraft launcher for Windows: Modrinth + CurseForge modpacks, texture packs, shaders, managed Java, offline play for owners, and a hand-off to the official launcher.",
   "author": "Noah Roe",
   "license": "MIT",
   "main": "./out/main/index.js",

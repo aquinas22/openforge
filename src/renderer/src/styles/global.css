@@ -3590,3 +3590,53 @@ kbd {
   letter-spacing: 0;
   text-transform: none;
 }
+
+/* -- Title bar: what Play will do ------------------------------------------ */
+.titlebar-play {
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--dim);
+  background: var(--bedrock);
+  box-shadow: inset 2px 2px 0 var(--edge-dark), inset -2px -2px 0 var(--edge-light);
+}
+.titlebar-play strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.titlebar-play:hover {
+  color: var(--text);
+}
+.titlebar-play.warn {
+  color: var(--gold);
+}
+.titlebar-play.warn .status-dot {
+  background: var(--gold);
+}
+[data-ui-style='modern'] .titlebar-play {
+  border-radius: 999px;
+}
+.play-gate small {
+  display: block;
+  font-size: 12px;
+}
+.play-status-hint.warn {
+  color: var(--gold);
+}
+.link-button {
+  padding: 0;
+  font: inherit;
+  color: var(--vein);
+  background: none;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.account-modal .hint {
+  font-size: 12px;
+  color: var(--muted);
+}
