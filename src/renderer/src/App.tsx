@@ -20,6 +20,7 @@ import { Discover } from './pages/Discover'
 import { Settings } from './pages/Settings'
 import { NewInstanceModal } from './pages/NewInstanceModal'
 import { InstanceDetail } from './pages/InstanceDetail'
+import { InstanceEditor } from './pages/InstanceEditor'
 
 function AccountModal({ onClose }: { onClose: () => void }): JSX.Element {
   const accounts = useStore((s) => s.accounts)
@@ -329,6 +330,22 @@ export default function App(): JSX.Element {
     document.documentElement.dataset.uiStyle = uiStyle ?? 'modern'
   }, [uiStyle])
 
+  // A file dropped anywhere but a drop target would make Electron navigate to
+  // it, replacing the whole app. Only the content tabs accept drops.
+  useEffect(() => {
+    const block = (event: DragEvent): void => {
+      if (event.defaultPrevented) return
+      event.preventDefault()
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'none'
+    }
+    window.addEventListener('dragover', block)
+    window.addEventListener('drop', block)
+    return () => {
+      window.removeEventListener('dragover', block)
+      window.removeEventListener('drop', block)
+    }
+  }, [])
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null
@@ -336,6 +353,11 @@ export default function App(): JSX.Element {
         target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT'
 
       if (event.key === 'Escape') {
+        // The editor sits above everything else; close it on its own first.
+        if (useStore.getState().editorFor) {
+          useStore.getState().openEditor(null)
+          return
+        }
         setNewOpen(false)
         setAccountOpen(false)
         setShortcutsOpen(false)
@@ -420,6 +442,7 @@ export default function App(): JSX.Element {
       {accountOpen && <AccountModal onClose={() => setAccountOpen(false)} />}
       {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
       <InstanceDetail />
+      <InstanceEditor />
       <Toasts />
       {showSplash && <BootSplash leaving={splashLeaving} />}
     </>

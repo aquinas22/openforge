@@ -20,6 +20,9 @@ import type {
   NetworkCheck,
   ProgressEvent,
   Provider,
+  RetargetInput,
+  RetargetPlan,
+  RetargetResult,
   Settings,
   SystemInfo,
   VersionSummary,
@@ -59,6 +62,8 @@ export interface InstallContentInput {
   projectId: string
   kind: ContentKind
   versionId?: string
+  /** For an update: the installed file this replaces. */
+  replaceFileName?: string
 }
 
 export interface QuickPlayInput {
@@ -154,6 +159,14 @@ export interface OpenforgeApi {
   installContent(id: string, input: InstallContentInput): Promise<ModInstallResult>
   checkContentUpdates(id: string, kind: ContentKind): Promise<InstalledMod[]>
   updateContent(id: string, kind: ContentKind): Promise<ModInstallResult>
+  /** Copy dropped files into the instance; each must suit the kind (.jar mods, .zip packs). */
+  addContentFiles(id: string, kind: ContentKind, paths: string[]): Promise<AddFilesResult>
+  /** Check the mods against another Minecraft version or loader. Changes nothing. */
+  planRetarget(id: string, target: { mcVersion: string; loader: LoaderType }): Promise<RetargetPlan>
+  /** Move the instance to another Minecraft version or loader. */
+  retargetInstance(id: string, input: RetargetInput): Promise<RetargetResult>
+  /** The on-disk path of a file dropped onto the window (Electron webUtils). */
+  pathForFile(file: object): string
 
   // -- Discover ---------------------------------------------------------------
   searchContent(input: ContentSearchInput): Promise<ContentSearchResult>
@@ -176,6 +189,12 @@ export interface OpenforgeApi {
   onLog(cb: (e: LogLine) => void): () => void
   /** Fires while a Microsoft sign-in is waiting on the browser. */
   onAuthEvent(cb: (e: AuthEvent) => void): () => void
+}
+
+export interface AddFilesResult {
+  mods: InstalledMod[]
+  added: string[]
+  skipped: string[]
 }
 
 export type InstanceSubfolder = 'mods' | 'config' | 'resourcepacks' | 'shaderpacks' | 'saves' | 'logs' | 'crash-reports'
@@ -241,6 +260,9 @@ export const IPC = {
   installContent: 'content:install',
   checkContentUpdates: 'content:checkUpdates',
   updateContent: 'content:update',
+  addContentFiles: 'content:addFiles',
+  planRetarget: 'instance:planRetarget',
+  retargetInstance: 'instance:retarget',
 
   searchContent: 'discover:search',
   getProject: 'discover:project',

@@ -18,7 +18,9 @@ import { api } from '../api'
 import { cleanError } from '../util'
 
 export type Route = 'library' | 'discover' | 'settings'
-export type DetailTab = 'overview' | 'content' | 'setup' | 'worlds' | 'manage'
+export type DetailTab = 'overview' | 'setup' | 'worlds' | 'manage'
+/** The instance editor's tabs: one per content kind, then the profile's settings. */
+export type EditorTab = 'mod' | 'resourcepack' | 'shader' | 'datapack' | 'settings'
 
 export interface Toast {
   id: number
@@ -59,6 +61,9 @@ interface State {
   detailInstance: string | null
   /** Which drawer tab to show when the detail opens. */
   detailTab: DetailTab
+  /** The instance open in the editor, and which tab. */
+  editorFor: string | null
+  editorTab: EditorTab
   accountsOpen: boolean
   shortcutsOpen: boolean
   browseTarget: { instanceId: string; kind: ContentKind } | null
@@ -105,6 +110,7 @@ interface State {
 
   openConsole(id: string | null): void
   openDetail(id: string | null, tab?: DetailTab): void
+  openEditor(id: string | null, tab?: EditorTab): void
   browseFor(instanceId: string, kind: ContentKind): void
 }
 
@@ -131,6 +137,8 @@ export const useStore = create<State>((set, get) => ({
   consoleFor: null,
   detailInstance: null,
   detailTab: 'overview',
+  editorFor: null,
+  editorTab: 'mod',
   accountsOpen: false,
   shortcutsOpen: false,
   browseTarget: null,
@@ -246,13 +254,11 @@ export const useStore = create<State>((set, get) => ({
         if (instanceId) set({ consoleFor: instanceId })
         break
       case 'memory':
-        if (instanceId) set({ detailInstance: instanceId, detailTab: 'overview' })
-        break
       case 'jvm':
-        if (instanceId) set({ detailInstance: instanceId, detailTab: 'manage' })
+        if (instanceId) set({ editorFor: instanceId, editorTab: 'settings' })
         break
       case 'content':
-        if (instanceId) set({ detailInstance: instanceId, detailTab: 'content' })
+        if (instanceId) set({ editorFor: instanceId, editorTab: 'mod' })
         break
     }
   },
@@ -398,6 +404,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   openConsole: (id) => set({ consoleFor: id }),
+  openEditor: (id, tab) => set((s) => ({ editorFor: id, editorTab: tab ?? (id === s.editorFor ? s.editorTab : 'mod') })),
   openDetail: (id, tab) => set((s) => ({ detailInstance: id, detailTab: tab ?? (id === s.detailInstance ? s.detailTab : 'overview') })),
   browseFor: (instanceId, kind) => set({ route: 'discover', detailInstance: null, browseTarget: { instanceId, kind } })
 }))

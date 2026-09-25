@@ -400,6 +400,50 @@ export interface InstalledMod {
   kind: ContentKind
 }
 
+/** What changing an instance's Minecraft version or loader would do to its mods. */
+export interface RetargetItem {
+  fileName: string
+  displayName: string
+  /**
+   * ok: a build for the new target exists and can be switched to.
+   * missing: the project has no build for the new target.
+   * unknown: not recognised by either provider; check it yourself.
+   */
+  status: 'ok' | 'missing' | 'unknown'
+  provider?: Provider
+  projectId?: string
+  /** The build that would replace this file (status ok). */
+  versionId?: string
+  versionNumber?: string
+  /** Already the right file for the target; nothing to download. */
+  unchanged?: boolean
+}
+
+export interface RetargetPlan {
+  mcVersion: string
+  loader: LoaderType
+  items: RetargetItem[]
+  /** The instance follows a published pack and would be detached from its updates. */
+  detachesPack: boolean
+}
+
+export interface RetargetInput {
+  mcVersion: string
+  loader: LoaderType
+  loaderVersion?: string
+  /** Switch mods with a matching build to it. */
+  updateMods: boolean
+  /** Disable mods with no build for the new target. */
+  disableMissing: boolean
+}
+
+export interface RetargetResult {
+  instance: Instance
+  updated: string[]
+  disabled: string[]
+  failed: string[]
+}
+
 export interface ModInstallResult {
   mods: InstalledMod[]
   installed: string[]

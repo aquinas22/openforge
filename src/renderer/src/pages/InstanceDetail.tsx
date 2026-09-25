@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   ArrowUpCircle,
-  Blocks,
   Boxes,
   CircleStop,
   Clock,
@@ -9,20 +8,15 @@ import {
   Download,
   ExternalLink,
   FolderOpen,
-  Gauge,
   Globe,
-  Image,
   Loader2,
   MemoryStick,
   Package,
-  PackageCheck,
+  Pencil,
   Play,
-  Plus,
-  Power,
   RefreshCw,
   Save,
   Share2,
-  Sparkles,
   Terminal,
   Trash2,
   TriangleAlert,
@@ -31,29 +25,11 @@ import {
 import { useShallow } from 'zustand/react/shallow'
 import { api } from '../api'
 import { useStore, type DetailTab } from '../store/store'
-import { bytes, cleanError, loaderLabel, playtime, timeAgo } from '../util'
-import type { ContentKind, InstalledMod, WorldSummary } from '@shared/types'
-import { recommendedRamMb } from '@shared/tuning'
+import { cleanError, loaderLabel, playtime, timeAgo } from '../util'
+import type { WorldSummary } from '@shared/types'
 import { InstanceSetup } from './InstanceSetup'
 
 type Tab = DetailTab
-
-const CONTENT_TABS: { key: ContentKind; label: string; icon: JSX.Element; empty: string }[] = [
-  { key: 'mod', label: 'Mods', icon: <Blocks size={14} />, empty: 'No mods in this instance yet.' },
-  {
-    key: 'resourcepack',
-    label: 'Texture packs',
-    icon: <Image size={14} />,
-    empty: 'No texture packs yet. Find some in Discover.'
-  },
-  {
-    key: 'shader',
-    label: 'Shaders',
-    icon: <Sparkles size={14} />,
-    empty: 'No shader packs yet. You will also need Iris or OptiFine installed.'
-  },
-  { key: 'datapack', label: 'Data packs', icon: <Boxes size={14} />, empty: 'No data packs yet.' }
-]
 
 export function InstanceDetail(): JSX.Element | null {
   const id = useStore((s) => s.detailInstance)
@@ -65,10 +41,8 @@ export function InstanceDetail(): JSX.Element | null {
       label: id ? s.progress[id]?.label : undefined
     }))
   )
-  const settings = useStore((s) => s.settings)
-  const systemInfo = useStore((s) => s.systemInfo)
   const openDetail = useStore((s) => s.openDetail)
-  const browseFor = useStore((s) => s.browseFor)
+  const openEditor = useStore((s) => s.openEditor)
   const openConsole = useStore((s) => s.openConsole)
   const launch = useStore((s) => s.launch)
   const kill = useStore((s) => s.kill)
@@ -81,40 +55,8 @@ export function InstanceDetail(): JSX.Element | null {
 
   const tab = useStore((s) => s.detailTab)
   const setTab = useStore((s) => s.setDetailTab)
-  const [contentKind, setContentKind] = useState<ContentKind>('mod')
-  const [items, setItems] = useState<InstalledMod[]>([])
-  const [itemsLoading, setItemsLoading] = useState(false)
   const [worlds, setWorlds] = useState<WorldSummary[]>([])
-  const [checking, setChecking] = useState(false)
   const [serverAddress, setServerAddress] = useState('')
-  const [contentQuery, setContentQuery] = useState('')
-  const [profileName, setProfileName] = useState('')
-  const [ramDraft, setRamDraft] = useState<number | null>(null)
-  const ramTimer = useRef<number | undefined>(undefined)
-
-  const loadContent = useCallback(
-    async (kind: ContentKind) => {
-      if (!id) return
-      setItemsLoading(true)
-      try {
-        setItems(await api.listContent(id, kind))
-      } catch {
-        setItems([])
-      } finally {
-        setItemsLoading(false)
-      }
-    },
-    [id]
-  )
-
-  useEffect(() => {
-    if (id) loadContent(contentKind)
-    setContentQuery('')
-  }, [id, contentKind, loadContent])
-
-  useEffect(() => {
-    setProfileName(inst?.name ?? '')
-  }, [id, inst?.name])
 
   useEffect(() => {
     if (id && tab === 'worlds') api.listWorlds(id).then(setWorlds).catch(() => setWorlds([]))
@@ -126,35 +68,7 @@ export function InstanceDetail(): JSX.Element | null {
     api.checkPackUpdate(id).then(() => refreshInstances()).catch(() => undefined)
   }, [id, inst?.provider, refreshInstances])
 
-  // Commit the memory slider once it settles, not on every pixel of a drag.
-  useEffect(() => {
-    if (ramDraft === null || !id) return
-    window.clearTimeout(ramTimer.current)
-    ramTimer.current = window.setTimeout(async () => {
-      await api.updateInstance(id, { ramMb: ramDraft }).catch(() => undefined)
-      await refreshInstances()
-      setRamDraft(null)
-    }, 350)
-    return () => window.clearTimeout(ramTimer.current)
-  }, [ramDraft, id, refreshInstances])
-
   if (!id || !inst) return null
-  const autoRam = inst.ramMb === undefined
-  const globalRam = settings?.ramMb ?? 4096
-  const recommendedRam = recommendedRamMb({
-    totalMemoryMb: systemInfo?.totalMemoryMb ?? 8192,
-    maxRamMb: systemInfo?.maxRamMb ?? 4096,
-    loader: inst.loader,
-    modCount: contentKind === 'mod' ? items.length : undefined
-  })
-  const automaticRam = inst.loader === 'vanilla' ? globalRam : Math.max(globalRam, recommendedRam)
-  const shownRam = ramDraft ?? inst.ramMb ?? automaticRam
-  const currentTab = CONTENT_TABS.find((t) => t.key === contentKind)!
-  const updatable = items.filter((item) => item.updateAvailable).length
-  const visibleItems = items.filter((item) =>
-    (item.displayName + ' ' + item.fileName).toLowerCase().includes(contentQuery.trim().toLowerCase())
-  )
-
   return (
     <>
       <div className="scrim" onClick={() => openDetail(null)} style={{ background: 'rgba(4,5,10,0.5)' }} />
@@ -172,7 +86,6 @@ export function InstanceDetail(): JSX.Element | null {
           {(
             [
               ['overview', 'Overview'],
-              ['content', 'Content'],
               ['setup', 'Setup'],
               ['worlds', 'Worlds'],
               ['manage', 'Manage']
@@ -274,6 +187,9 @@ export function InstanceDetail(): JSX.Element | null {
                     {inst.installed ? 'Play' : 'Install & Play'}
                   </button>
                 )}
+                <button className="btn" onClick={() => openEditor(inst.id)}>
+                  <Pencil size={16} /> Edit
+                </button>
                 <button className="btn icon" title="Console" onClick={() => openConsole(inst.id)}>
                   <Terminal size={16} />
                 </button>
@@ -304,219 +220,17 @@ export function InstanceDetail(): JSX.Element | null {
                 <Stat icon={<Boxes size={15} />} label="Created" value={timeAgo(inst.createdAt)} last />
               </div>
 
-              <div className="eyebrow" style={{ marginBottom: 10 }}>
-                Memory
-              </div>
-              <div className="panel" style={{ padding: 16 }}>
-                <div className="between" style={{ marginBottom: 10 }}>
-                  <span className="row" style={{ gap: 8 }}>
-                    <MemoryStick size={15} /> Instance allocation
-                  </span>
-                  <span className="chip accent">
-                    {(shownRam / 1024).toFixed(1)} GB{autoRam && ramDraft === null ? ' · auto' : ''}
-                  </span>
-                </div>
-                <input
-                  className="slider"
-                  type="range"
-                  aria-label="Memory for this instance"
-                  min={1024}
-                  max={systemInfo?.maxRamMb ?? 4096}
-                  step={256}
-                  value={shownRam}
-                  disabled={st.running}
-                  onChange={(e) => setRamDraft(Number(e.target.value))}
-                />
-                <div className="between hint" style={{ marginTop: 5 }}>
-                  <span>1 GB</span>
-                  <span>{((systemInfo?.maxRamMb ?? 4096) / 1024).toFixed(1)} GB safe maximum</span>
-                </div>
-                <div className="ram-auto">
-                  <Gauge size={14} />
-                  <span>
-                    {inst.loader === 'vanilla'
-                      ? `Automatic uses your default of ${(globalRam / 1024).toFixed(1)} GB.`
-                      : `Automatic: ${(automaticRam / 1024).toFixed(1)} GB, based on ${
-                          contentKind === 'mod' && items.length ? `${items.length} mods and ` : ''
-                        }${((systemInfo?.totalMemoryMb ?? 0) / 1024).toFixed(0)} GB of system memory.`}
-                  </span>
-                  {!autoRam && (
-                    <button
-                      className="btn sm ghost"
-                      disabled={st.running}
-                      onClick={async () => {
-                        setRamDraft(null)
-                        await api.updateInstance(inst.id, { ramMb: 0 })
-                        await refreshInstances()
-                      }}
-                    >
-                      Use automatic
-                    </button>
-                  )}
-                </div>
-                <p className="hint" style={{ marginTop: 10 }}>
-                  Large packs want 6–10 GB. More is not always better — the garbage collector has to
-                  walk everything you give it.
-                </p>
-              </div>
-            </>
-          )}
-
-          {tab === 'content' && (
-            <>
-              <div className="pill-tabs" role="tablist" aria-label="Content kind">
-                {CONTENT_TABS.map((entry) => (
-                  <button
-                    key={entry.key}
-                    role="tab"
-                    aria-selected={contentKind === entry.key}
-                    className={contentKind === entry.key ? 'active' : ''}
-                    onClick={() => setContentKind(entry.key)}
-                  >
-                    {entry.icon} {entry.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="content-intro panel">
-                <div>
-                  <strong>Make this pack yours</strong>
-                  <p>Browse compatible projects or bring your own files. Additions live in this profile.</p>
-                </div>
-                <button className="btn primary" onClick={() => browseFor(inst.id, contentKind)}>
-                  <Plus size={15} /> Browse {currentTab.label.toLowerCase()}
-                </button>
-              </div>
-
-              <div className="between" style={{ margin: '16px 0 12px' }}>
-                <div className="eyebrow" style={{ margin: 0 }}>
-                  {currentTab.label} · {items.length}
-                  {updatable > 0 && <span className="chip accent tiny"> {updatable} update</span>}
-                </div>
-                <div className="row" style={{ gap: 8 }}>
-                  <button
-                    className="btn sm"
-                    disabled={st.running || checking}
-                    onClick={async () => {
-                      setChecking(true)
-                      try {
-                        setItems(await api.checkContentUpdates(inst.id, contentKind))
-                        toast('Checked for updates', 'success')
-                      } catch (e) {
-                        toast(cleanError(e), 'error')
-                      } finally {
-                        setChecking(false)
-                      }
-                    }}
-                  >
-                    {checking ? <Loader2 size={14} className="spin" /> : <PackageCheck size={14} />} Check
-                  </button>
-                  <button
-                    className="btn sm primary"
-                    disabled={st.running}
-                    onClick={async () => {
-                      try {
-                        setItems(await api.importContent(inst.id, contentKind))
-                        toast('Files imported', 'success')
-                      } catch (e) {
-                        toast(cleanError(e), 'error')
-                      }
-                    }}
-                  >
-                    <Plus size={14} /> Add file
-                  </button>
-                </div>
-              </div>
-
-              {updatable > 0 && (
-                <button
-                  className="btn primary"
-                  style={{ width: '100%', marginBottom: 12 }}
-                  disabled={st.running || itemsLoading}
-                  onClick={async () => {
-                    setItemsLoading(true)
-                    try {
-                      const result = await api.updateContent(inst.id, contentKind)
-                      setItems(result.mods)
-                      toast(
-                        result.installed.length
-                          ? `Updated ${result.installed.length} items`
-                          : 'Everything is already current',
-                        'success'
-                      )
-                      if (result.failed?.length) toast(result.failed.join('; '), 'error')
-                    } catch (e) {
-                      toast(cleanError(e), 'error')
-                    } finally {
-                      setItemsLoading(false)
-                    }
-                  }}
-                >
-                  <ArrowUpCircle size={15} /> Update {updatable} {currentTab.label.toLowerCase()}
-                </button>
-              )}
-
-              <input
-                className="input content-filter"
-                aria-label={`Search installed ${currentTab.label.toLowerCase()}`}
-                placeholder={`Search installed ${currentTab.label.toLowerCase()}…`}
-                value={contentQuery}
-                onChange={(event) => setContentQuery(event.target.value)}
-              />
-
-              <div className="panel mod-list">
-                {itemsLoading ? (
-                  <div className="empty" style={{ padding: 24 }}>
-                    <Loader2 size={18} className="spin" /> Reading files…
-                  </div>
-                ) : visibleItems.length === 0 ? (
-                  <div className="empty" style={{ padding: 24 }}>
-                    {items.length ? 'No files match this search.' : currentTab.empty}
-                  </div>
-                ) : (
-                  visibleItems.map((item) => (
-                    <div className={`mod-row${item.enabled ? '' : ' disabled'}`} key={item.fileName}>
-                      <button
-                        className={`mod-power${item.enabled ? ' on' : ''}`}
-                        title={item.enabled ? 'Disable' : 'Enable'}
-                        disabled={st.running}
-                        onClick={async () =>
-                          setItems(
-                            await api.toggleContent(inst.id, contentKind, item.fileName, !item.enabled)
-                          )
-                        }
-                      >
-                        <Power size={15} />
-                      </button>
-                      <div className="mod-info">
-                        <strong>{item.displayName}</strong>
-                        <small>
-                          {bytes(item.size)} · {item.enabled ? 'Enabled' : 'Disabled'}
-                          {item.version ? ` · ${item.version}` : ''}
-                          {item.provider ? ` · ${item.provider}` : ''}
-                        </small>
-                      </div>
-                      {item.updateAvailable && (
-                        <span className="chip accent tiny" title={`Update to ${item.updateAvailable.versionNumber}`}>
-                          <ArrowUpCircle size={11} /> New
-                        </span>
-                      )}
-                      <button
-                        className="win-btn"
-                        title="Remove"
-                        disabled={st.running}
-                        onClick={async () => {
-                          if (confirm(`Remove ${item.displayName} from this instance?`)) {
-                            setItems(await api.deleteContent(inst.id, contentKind, item.fileName))
-                          }
-                        }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
+              <button className="panel edit-shortcuts" onClick={() => openEditor(inst.id, 'settings')}>
+                <MemoryStick size={15} />
+                <span>
+                  <strong>Memory, Java and version</strong>
+                  <small>
+                    {inst.ramMb ? `${(inst.ramMb / 1024).toFixed(1)} GB` : 'Automatic memory'} ·{' '}
+                    {inst.javaPath ? 'custom Java' : 'automatic Java'} · {loaderLabel(inst.loader)} {inst.mcVersion}
+                  </small>
+                </span>
+                <Pencil size={14} />
+              </button>
             </>
           )}
 
@@ -578,31 +292,13 @@ export function InstanceDetail(): JSX.Element | null {
 
           {tab === 'manage' && (
             <div style={{ display: 'grid', gap: 8 }} key={inst.id}>
-              <div className="profile-editor panel">
-                <div className="eyebrow">Profile</div>
-                <label className="field">
-                  <span>Profile name</span>
-                  <div className="input-row">
-                    <input
-                      className="input"
-                      value={profileName}
-                      maxLength={80}
-                      onChange={(event) => setProfileName(event.target.value)}
-                      onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
-                      onBlur={async () => {
-                        const name = profileName.trim()
-                        if (!name || name === inst.name) return
-                        try {
-                          await api.updateInstance(inst.id, { name })
-                          await refreshInstances()
-                          toast('Profile renamed', 'success')
-                        } catch (e) { toast(cleanError(e), 'error') }
-                      }}
-                    />
-                  </div>
-                </label>
-                <p>Mods, texture packs, shaders, worlds and settings are kept separately for each profile.</p>
-              </div>
+              <button
+                className="btn"
+                style={{ justifyContent: 'flex-start' }}
+                onClick={() => openEditor(inst.id, 'settings')}
+              >
+                <Pencil size={16} /> Name, icon, version, memory and Java
+              </button>
               <button
                 className="btn"
                 style={{ justifyContent: 'flex-start' }}
@@ -656,34 +352,6 @@ export function InstanceDetail(): JSX.Element | null {
               >
                 <Package size={16} /> Export as CurseForge zip
               </button>
-
-              <div className="eyebrow" style={{ margin: '14px 0 4px' }}>
-                Advanced
-              </div>
-              <label className="field">
-                <span>Extra JVM flags for this instance (G1 garbage-collector tuning is added unless you set your own -XX:+Use…GC)</span>
-                <input
-                  className="input"
-                  defaultValue={inst.jvmArgs ?? ''}
-                  placeholder="-Dsomething=true"
-                  onBlur={async (e) => {
-                    await api.updateInstance(inst.id, { jvmArgs: e.target.value })
-                    await refreshInstances()
-                  }}
-                />
-              </label>
-              <label className="field">
-                <span>Java override (leave empty to use the managed runtime)</span>
-                <input
-                  className="input"
-                  defaultValue={inst.javaPath ?? ''}
-                  placeholder="C:\\Program Files\\Eclipse Adoptium\\jdk-21\\bin\\java.exe"
-                  onBlur={async (e) => {
-                    await api.updateInstance(inst.id, { javaPath: e.target.value })
-                    await refreshInstances()
-                  }}
-                />
-              </label>
 
               <button
                 className="btn danger"

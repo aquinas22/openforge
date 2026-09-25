@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC } from '../shared/ipc'
 import type { AuthEvent, OpenforgeApi } from '../shared/ipc'
 import type { LogLine, ProgressEvent } from '../shared/types'
@@ -66,6 +66,10 @@ const api: OpenforgeApi = {
   installContent: (id, input) => ipcRenderer.invoke(IPC.installContent, id, input),
   checkContentUpdates: (id, kind) => ipcRenderer.invoke(IPC.checkContentUpdates, id, kind),
   updateContent: (id, kind) => ipcRenderer.invoke(IPC.updateContent, id, kind),
+  addContentFiles: (id, kind, paths) => ipcRenderer.invoke(IPC.addContentFiles, id, kind, paths),
+  planRetarget: (id, target) => ipcRenderer.invoke(IPC.planRetarget, id, target),
+  retargetInstance: (id, input) => ipcRenderer.invoke(IPC.retargetInstance, id, input),
+  pathForFile: (file) => webUtils.getPathForFile(file as Parameters<typeof webUtils.getPathForFile>[0]),
 
   searchContent: (input) => ipcRenderer.invoke(IPC.searchContent, input),
   getProject: (provider, id) => ipcRenderer.invoke(IPC.getProject, provider, id),

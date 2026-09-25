@@ -15,7 +15,8 @@ import {
   List,
   Gamepad2,
   Layers3,
-  Timer
+  Timer,
+  Pencil
 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { api } from '../api'
@@ -71,6 +72,7 @@ function PlayControl({ inst, big }: { inst: Instance; big?: boolean }): JSX.Elem
 function Hero({ inst }: { inst: Instance }): JSX.Element {
   const openConsole = useStore((s) => s.openConsole)
   const openDetail = useStore((s) => s.openDetail)
+  const openEditor = useStore((s) => s.openEditor)
   const running = useStore((s) => !!s.running[inst.id])
   return (
     <div
@@ -125,8 +127,11 @@ function Hero({ inst }: { inst: Instance }): JSX.Element {
         </div>
         <div className="row" style={{ gap: 12 }}>
           <PlayControl inst={inst} big />
-          <button className="btn" onClick={() => openDetail(inst.id)}>
-            Customize profile
+          <button className="btn" onClick={() => openEditor(inst.id)}>
+            <Pencil size={15} /> Edit
+          </button>
+          <button className="btn ghost" onClick={() => openDetail(inst.id)}>
+            Details
           </button>
           <button className="btn ghost" onClick={() => openConsole(inst.id)}>
             View log
@@ -158,6 +163,7 @@ function InstanceCard({
 }): JSX.Element {
   const st = useInstState(inst.id)
   const openDetail = useStore((s) => s.openDetail)
+  const openEditor = useStore((s) => s.openEditor)
   const pct = st.progress && st.progress >= 0 ? Math.round(st.progress * 100) : null
 
   return (
@@ -216,8 +222,16 @@ function InstanceCard({
             <span style={{ width: `${pct ?? 0}%`, ...(pct === null ? { animation: 'none' } : {}) }} />
           </div>
         ) : (
-          <div onClick={(e) => e.stopPropagation()}>
+          <div className="card-actions" onClick={(e) => e.stopPropagation()}>
             <PlayControl inst={inst} />
+            <button
+              className="btn icon"
+              title={`Edit ${inst.name}`}
+              aria-label={`Edit ${inst.name}`}
+              onClick={() => openEditor(inst.id)}
+            >
+              <Pencil size={15} />
+            </button>
           </div>
         )}
       </div>

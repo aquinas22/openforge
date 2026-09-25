@@ -369,6 +369,25 @@ export class ModrinthClient {
     return out
   }
 
+  /**
+   * The Modrinth version each file hash belongs to, whatever game version or
+   * loader it was built for. Hashes Modrinth does not know are left out.
+   */
+  async versionsForHashes(sha512s: string[]): Promise<Record<string, ContentVersion>> {
+    const out: Record<string, ContentVersion> = {}
+    for (let i = 0; i < sha512s.length; i += 100) {
+      const raw = await postJson<Record<string, RawVersion>>(`${BASE}/version_files`, {
+        hashes: sha512s.slice(i, i + 100),
+        algorithm: 'sha512'
+      })
+      for (const [hash, version] of Object.entries(raw)) {
+        const normalized = normalizeVersion(version)
+        if (normalized) out[hash] = normalized
+      }
+    }
+    return out
+  }
+
   /** Reverse-lookup the project a local file belongs to, by file hash. */
   async versionByHash(sha512: string): Promise<ContentVersion | null> {
     try {

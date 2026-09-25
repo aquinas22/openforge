@@ -2,8 +2,8 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readdirSync } from 'node:fs'
 import { arch, totalmem } from 'node:os'
-import { copyFile, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { basename, join, resolve as resolvePath, sep } from 'node:path'
+import { copyFile, cp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { basename, extname, isAbsolute, join, resolve as resolvePath, sep } from 'node:path'
 import type {
   CleanupResult,
   ContentKind,
@@ -15,12 +15,17 @@ import type {
   LoaderType,
   LogLine,
   NetworkCheck,
+  RetargetInput,
+  RetargetPlan,
+  RetargetResult,
   ProgressEvent,
   Provider,
   Settings
 } from '@shared/types'
+import { LOADERS } from '@shared/types'
 import { IPC } from '@shared/ipc'
 import type {
+  AddFilesResult,
   AuthEvent,
   ContentSearchInput,
   CreateInstanceInput,
@@ -74,6 +79,7 @@ import { builtinCfKey } from './core/builtinkey'
 import { ModrinthClient } from './core/modrinth'
 import { installPack, installPackFromFile, readPackIndex } from './core/packinstall'
 import {
+  applyRetargetPlan,
   checkForUpdates,
   deleteContent,
   exportCurseForgePack,
@@ -82,6 +88,7 @@ import {
   importLocalFile,
   installContent,
   listContent,
+  planRetarget,
   toggleContent,
   updateAll
 } from './core/content'
@@ -562,8 +569,19 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       if (patch.ramMb <= 0) delete inst.ramMb
       else inst.ramMb = clampRam(patch.ramMb)
     }
-    if (patch.jvmArgs !== undefined) inst.jvmArgs = patch.jvmArgs
-    if (patch.javaPath !== undefined) inst.javaPath = patch.javaPath
+    if (patch.jvmArgs !== undefined) inst.jvmArgs = String(patch.jvmArgs).slice(0, 4000)
+    if (patch.javaPath !== undefined) {
+      inst.javaPath = String(patch.javaPath).trim() || undefined
+      forgetJava()
+    }
+    if (patch.iconUrl !== undefined) {
+      const icon = String(patch.iconUrl)
+      // A pack's https icon, a small picture the editor resized, or nothing.
+      if (!icon) delete inst.iconUrl
+      else if (/^https:\/\/\S+$/i.test(icon) && icon.length < 2048) inst.iconUrl = icon
+      else if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(icon) && icon.length < 400_000) inst.iconUrl = icon
+      else throw new Error('That icon could not be used. Pick a PNG, JPEG or WebP image.')
+    }
     persist()
     return inst
   })
@@ -1053,7 +1071,8 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       provider: input.provider,
       projectId: input.projectId,
       kind: resolved,
-      versionId: input.versionId
+      versionId: input.versionId ? String(input.versionId) : undefined,
+      replaceFileName: input.replaceFileName ? safeFileName(String(input.replaceFileName)) : undefined
     })
     result.mods = await listContent(instanceDirOf(id), resolved)
     return result
@@ -1078,6 +1097,103 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     })
     result.mods = await listContent(instanceDirOf(id), resolved)
     return result
+  })
+
+  // Files dropped onto an instance's content tab.
+  ipcMain.handle(
+    IPC.addContentFiles,
+    async (_e, id: string, kind: ContentKind, paths: string[]): Promise<AddFilesResult> => {
+      findInstance(id)
+      const resolved = kindOf(kind)
+      const wanted = resolved === 'mod' ? '.jar' : '.zip'
+      const added: string[] = []
+      const skipped: string[] = []
+      for (const raw of Array.isArray(paths) ? paths.slice(0, 200) : []) {
+        const path = String(raw)
+        const name = basename(path)
+        try {
+          if (!isAbsolute(path)) throw new Error('not a file on this computer')
+          if (extname(name).toLowerCase() !== wanted) {
+            throw new Error(resolved === 'mod' ? 'mods are .jar files' : `${resolved === 'shader' ? 'shader packs' : 'packs'} are .zip files`)
+          }
+          const info = await stat(path)
+          if (!info.isFile()) throw new Error('not a file')
+          if (info.size > 1024 * 1024 * 1024) throw new Error('larger than 1 GB')
+          await importLocalFile(instanceDirOf(id), resolved, path)
+          added.push(name)
+        } catch (err) {
+          skipped.push(`${name} (${(err as Error).message})`)
+        }
+      }
+      return { mods: await listContent(instanceDirOf(id), resolved), added, skipped }
+    }
+  )
+
+  // -- Changing an instance's Minecraft version or loader ------------------------
+  const retargetTarget = (value: { mcVersion?: unknown; loader?: unknown }): { mcVersion: string; loader: LoaderType } => {
+    const mcVersion = String(value?.mcVersion ?? '').trim()
+    const loader = String(value?.loader ?? '') as LoaderType
+    if (!/^[\w.\- ]{1,48}$/.test(mcVersion)) throw new Error('Pick a Minecraft version.')
+    if (!LOADERS.includes(loader)) throw new Error('Pick a mod loader.')
+    return { mcVersion, loader }
+  }
+  const tracksPack = (inst: Instance): boolean => Boolean(inst.provider && inst.projectId && inst.versionId)
+
+  ipcMain.handle(
+    IPC.planRetarget,
+    async (_e, id: string, target: { mcVersion: string; loader: LoaderType }): Promise<RetargetPlan> => {
+      const inst = findInstance(id)
+      const { mcVersion, loader } = retargetTarget(target)
+      const items = await planRetarget({ clients: clients(), instance: inst, instanceDir: instanceDirOf(id), mcVersion, loader })
+      return { mcVersion, loader, items, detachesPack: tracksPack(inst) }
+    }
+  )
+
+  ipcMain.handle(IPC.retargetInstance, async (_e, id: string, input: RetargetInput): Promise<RetargetResult> => {
+    const inst = findInstance(id)
+    if (running.has(id) || launching.has(id) || installing.has(id)) {
+      throw new Error('Close Minecraft and wait for installs to finish before changing the version.')
+    }
+    const { mcVersion, loader } = retargetTarget(input)
+    const loaderVersion = input.loaderVersion ? String(input.loaderVersion).trim() : undefined
+    if ((loader === 'forge' || loader === 'neoforge') && !loaderVersion) {
+      throw new Error(`Pick a ${loader === 'forge' ? 'Forge' : 'NeoForge'} version.`)
+    }
+
+    const target: Instance = { ...inst, mcVersion, loader, loaderVersion: loader === 'vanilla' ? undefined : loaderVersion }
+    let outcome = { updated: [] as string[], disabled: [] as string[], failed: [] as string[] }
+    if (input.updateMods || input.disableMissing) {
+      const items = await planRetarget({ clients: clients(), instance: inst, instanceDir: instanceDirOf(id), mcVersion, loader })
+      outcome = await applyRetargetPlan({
+        clients: clients(),
+        instance: target,
+        instanceDir: instanceDirOf(id),
+        items,
+        updateMods: Boolean(input.updateMods),
+        disableMissing: Boolean(input.disableMissing)
+      })
+    }
+
+    inst.mcVersion = target.mcVersion
+    inst.loader = target.loader
+    inst.loaderVersion = target.loaderVersion
+    // A pack install would put the old version straight back, so the profile
+    // stops following the pack; its files stay exactly as they are.
+    if (tracksPack(inst)) {
+      delete inst.provider
+      delete inst.projectId
+      delete inst.versionId
+      delete inst.cfProjectId
+      delete inst.cfFileId
+      delete inst.updateAvailable
+      delete inst.packVersion
+    }
+    inst.installed = false
+    delete inst.launchVersion
+    delete inst.loaderPending
+    persist()
+    logFor(id, 'system', `[Openforge] Profile moved to ${loaderLabelOf(loader)} ${mcVersion}${loaderVersion ? ` (${loaderVersion})` : ''}.`)
+    return { instance: inst, ...outcome }
   })
 
   // -- Discover ---------------------------------------------------------------
@@ -1134,4 +1250,8 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
 
   // Surface pack-index state for the UI's "tracked pack" badge.
   ipcMain.handle('pack:index', (_e, id: string) => readPackIndex(instanceDirOf(id)))
+}
+
+function loaderLabelOf(loader: LoaderType): string {
+  return { vanilla: 'Vanilla', fabric: 'Fabric', forge: 'Forge', neoforge: 'NeoForge', quilt: 'Quilt' }[loader]
 }

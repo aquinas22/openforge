@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Instance, Settings } from '@shared/types'
 import { defaultGameDir } from './paths'
-import { defaultSettings as sharedDefaults, migrateSettings } from '@shared/settings'
+import { defaultSettings as sharedDefaults, migrateSettings } from '../../shared/settings'
 
 /**
  * Tiny JSON-file store for settings and instances.

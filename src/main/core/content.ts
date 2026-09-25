@@ -9,11 +9,13 @@ import type {
   Instance,
   InstalledMod,
   ModInstallResult,
-  Provider
+  Provider,
+  RetargetItem
 } from '@shared/types'
 import { CfClient } from './curseforge'
 import { ModrinthClient } from './modrinth'
 import { downloadFile } from './http'
+import { loaderMatches } from '../../shared/compat'
 
 /**
  * Everything that lives inside an instance and can be added, toggled, updated,
@@ -160,10 +162,9 @@ function isCompatible(version: ContentVersion, instance: Instance, kind: Content
   if (version.gameVersions.length && !version.gameVersions.includes(instance.mcVersion)) return false
   if (kind !== 'mod') return true
   if (instance.loader === 'vanilla' || version.loaders.length === 0) return true
-  const wanted = instance.loader === 'neoforge' ? /neo\s*forge/i : new RegExp(instance.loader, 'i')
-  // Quilt runs Fabric mods, so accept either for a Quilt instance.
-  const quiltFallback = instance.loader === 'quilt' ? /fabric|quilt/i : null
-  return version.loaders.some((name) => wanted.test(name) || quiltFallback?.test(name))
+  // Exact loader tags: "forge" must not accept a NeoForge-only build. Quilt
+  // runs Fabric mods, so a Quilt instance accepts either.
+  return loaderMatches(version.loaders, instance.loader)
 }
 
 function pickVersion(
@@ -230,6 +231,12 @@ export async function installContent(opts: {
   kind: ContentKind
   /** Install this exact version instead of the best compatible one. */
   versionId?: string
+  /**
+   * The file this install replaces (an update). Needed when the old file is
+   * not tracked under the same provider/project, e.g. a hand-added jar that
+   * Modrinth recognised by its hash.
+   */
+  replaceFileName?: string
 }): Promise<ModInstallResult> {
   const { clients, instance, instanceDir, provider, kind } = opts
   const index = await readIndex(instanceDir)
@@ -241,6 +248,40 @@ export async function installContent(opts: {
   const targetDir = join(instanceDir, FOLDER[kind])
   await mkdir(targetDir, { recursive: true })
 
+  // Files in the folder the index knows nothing about (added by hand, or by
+  // another launcher), identified through Modrinth by hash on first need.
+  let untrackedProjects: Set<string> | null = null
+  const identifyUntracked = async (): Promise<Set<string>> => {
+    if (untrackedProjects) return untrackedProjects
+    untrackedProjects = new Set()
+    try {
+      const names = (await readdir(targetDir)).filter(
+        (name) =>
+          EXTENSIONS[kind].test(name) &&
+          !index.entries.some((entry) => entry.fileName === name.replace(/\.disabled$/i, ''))
+      )
+      const hashes = (await Promise.all(names.map((name) => sha512Of(join(targetDir, name)).catch(() => '')))).filter(Boolean)
+      if (hashes.length) {
+        for (const version of Object.values(await clients.modrinth.versionsForHashes(hashes))) {
+          untrackedProjects.add(version.projectId)
+        }
+      }
+    } catch {
+      /* unidentifiable: treat as absent, as before */
+    }
+    return untrackedProjects
+  }
+
+  /** A required dependency that is already here must not be downloaded twice. */
+  const alreadyPresent = async (projectId: string): Promise<boolean> => {
+    const tracked = index.entries.find((entry) => entry.provider === provider && entry.projectId === projectId)
+    if (tracked) {
+      const folder = join(instanceDir, FOLDER[tracked.kind] ?? FOLDER[kind])
+      if (existsSync(join(folder, tracked.fileName)) || existsSync(join(folder, `${tracked.fileName}.disabled`))) return true
+    }
+    return provider === 'modrinth' && (await identifyUntracked()).has(projectId)
+  }
+
   const installProject = async (
     projectId: string,
     wantedVersionId: string | undefined,
@@ -248,6 +289,7 @@ export async function installContent(opts: {
   ): Promise<void> => {
     if (visited.has(projectId)) return
     visited.add(projectId)
+    if (isDependency && (await alreadyPresent(projectId))) return
 
     const versions = await versionsFor(clients, provider, projectId)
     const version = wantedVersionId
@@ -318,6 +360,20 @@ export async function installContent(opts: {
   }
 
   await installProject(opts.projectId, opts.versionId, false)
+
+  // An update of an untracked (or differently tracked) file: retire the old
+  // copy now that the new one is on disk, or the game would load both.
+  if (opts.replaceFileName && installed.length) {
+    const bare = basename(opts.replaceFileName).replace(/\.disabled$/i, '')
+    const fresh = index.entries.find((entry) => entry.provider === provider && entry.projectId === opts.projectId)
+    if (bare && bare !== fresh?.fileName) {
+      for (const candidate of [bare, `${bare}.disabled`]) {
+        const oldPath = join(targetDir, candidate)
+        if (existsSync(oldPath)) await rm(oldPath, { force: true })
+      }
+      index.entries = index.entries.filter((entry) => entry.fileName !== bare || entry === fresh)
+    }
+  }
   await saveIndex(instanceDir, index)
 
   // A newly added texture pack that is not switched on looks broken; turn it on.
@@ -395,9 +451,13 @@ export async function checkForUpdates(opts: {
     items.map(async (item) => {
       const hash = hashes.get(item.fileName)
       const modrinthHit = hash ? latest[hash] : undefined
-      if (modrinthHit && modrinthHit.fileName !== item.fileName) {
+      if (modrinthHit && modrinthHit.fileName !== item.fileName.replace(/\.disabled$/i, '')) {
+        // Recognised by hash, so it can be updated from Modrinth even if it
+        // was added by hand or came from elsewhere.
         return {
           ...item,
+          provider: 'modrinth' as const,
+          projectId: modrinthHit.projectId,
           updateAvailable: {
             versionId: modrinthHit.id,
             versionNumber: modrinthHit.versionNumber
@@ -445,7 +505,8 @@ export async function updateAll(opts: {
         provider: item.provider,
         projectId: item.projectId,
         kind: opts.kind,
-        versionId: item.updateAvailable.versionId
+        versionId: item.updateAvailable.versionId,
+        replaceFileName: item.fileName
       })
       installed.push(...result.installed)
       dependencies.push(...result.dependencies)
@@ -648,4 +709,162 @@ export async function deleteContent(
 ): Promise<void> {
   await rm(join(instanceDir, FOLDER[kind], fileName), { force: true })
   await forgetContent(instanceDir, fileName)
+}
+
+// -- Changing an instance's version or loader ----------------------------------------
+
+/** Run `fn` over `items` with at most `limit` calls in flight, keeping order. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length)
+  let next = 0
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const i = next++
+      out[i] = await fn(items[i])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return out
+}
+
+/**
+ * What moving this instance to another Minecraft version or loader would do
+ * to its mods: which have a matching build, which have none, and which files
+ * neither provider recognises. Nothing is changed.
+ *
+ * Modrinth answers for every file at once by hash; CurseForge-tracked mods are
+ * asked one project at a time, a few in parallel.
+ */
+export async function planRetarget(opts: {
+  clients: ContentClients
+  instance: Instance
+  instanceDir: string
+  mcVersion: string
+  loader: Instance['loader']
+}): Promise<RetargetItem[]> {
+  const { clients, instanceDir } = opts
+  const target: Instance = { ...opts.instance, mcVersion: opts.mcVersion, loader: opts.loader }
+  const items = await listContent(instanceDir, 'mod')
+  if (items.length === 0) return []
+  const dir = join(instanceDir, FOLDER.mod)
+  const index = await readIndex(instanceDir)
+
+  const hashes = new Map<string, string>()
+  await Promise.all(
+    items.map(async (item) => {
+      try {
+        hashes.set(item.fileName, await sha512Of(join(dir, item.fileName)))
+      } catch {
+        /* unreadable: reported as unknown */
+      }
+    })
+  )
+  const allHashes = [...hashes.values()]
+  const loaders = target.loader === 'quilt' ? ['quilt', 'fabric'] : [target.loader]
+  let onTarget: Record<string, ContentVersion> = {}
+  let known: Record<string, ContentVersion> = {}
+  if (target.loader !== 'vanilla' && allHashes.length) {
+    try {
+      onTarget = await clients.modrinth.latestForHashes(allHashes, loaders, [target.mcVersion])
+    } catch {
+      /* Modrinth unreachable: fall back to per-project checks */
+    }
+  }
+  try {
+    known = allHashes.length ? await clients.modrinth.versionsForHashes(allHashes) : {}
+  } catch {
+    /* as above */
+  }
+
+  return mapLimit(items, 6, async (item): Promise<RetargetItem> => {
+    const bare = item.fileName.replace(/\.disabled$/i, '')
+    const base = { fileName: item.fileName, displayName: item.displayName }
+    const hash = hashes.get(item.fileName)
+    const record = index.entries.find((entry) => entry.fileName === bare)
+    const knownHit = hash ? known[hash] : undefined
+    const identity = record
+      ? { provider: record.provider, projectId: record.projectId }
+      : knownHit
+        ? { provider: 'modrinth' as const, projectId: knownHit.projectId }
+        : null
+
+    if (target.loader === 'vanilla') return { ...base, ...identity, status: 'missing' }
+
+    const hit = hash ? onTarget[hash] : undefined
+    if (hit) {
+      return {
+        ...base,
+        status: 'ok',
+        provider: 'modrinth',
+        projectId: hit.projectId,
+        versionId: hit.id,
+        versionNumber: hit.versionNumber,
+        unchanged: hit.fileName === bare
+      }
+    }
+    if (!identity) return { ...base, status: 'unknown' }
+    if (identity.provider === 'curseforge' && !clients.cf.available) return { ...base, ...identity, status: 'unknown' }
+    try {
+      const versions = await versionsFor(clients, identity.provider, identity.projectId)
+      const best = pickVersion(versions, target, 'mod')
+      if (!best) return { ...base, ...identity, status: 'missing' }
+      return {
+        ...base,
+        ...identity,
+        status: 'ok',
+        versionId: best.id,
+        versionNumber: best.versionNumber,
+        unchanged: best.fileName === bare
+      }
+    } catch {
+      return { ...base, ...identity, status: 'unknown' }
+    }
+  })
+}
+
+/**
+ * Carry out a retarget plan on the mods folder: switch mods to the builds the
+ * plan found, and optionally disable (never delete) the ones with no build.
+ * `instance` must already describe the new version and loader, so required
+ * dependencies are resolved for the target too.
+ */
+export async function applyRetargetPlan(opts: {
+  clients: ContentClients
+  instance: Instance
+  instanceDir: string
+  items: RetargetItem[]
+  updateMods: boolean
+  disableMissing: boolean
+}): Promise<{ updated: string[]; disabled: string[]; failed: string[] }> {
+  const updated: string[] = []
+  const disabled: string[] = []
+  const failed: string[] = []
+  for (const item of opts.items) {
+    if (item.status === 'ok' && opts.updateMods && !item.unchanged && item.provider && item.projectId && item.versionId) {
+      try {
+        const result = await installContent({
+          clients: opts.clients,
+          instance: opts.instance,
+          instanceDir: opts.instanceDir,
+          provider: item.provider,
+          projectId: item.projectId,
+          kind: 'mod',
+          versionId: item.versionId,
+          replaceFileName: item.fileName
+        })
+        updated.push(item.displayName)
+        failed.push(...(result.failed ?? []))
+      } catch (err) {
+        failed.push(`${item.displayName}: ${(err as Error).message}`)
+      }
+    } else if (item.status === 'missing' && opts.disableMissing && !/\.disabled$/i.test(item.fileName)) {
+      try {
+        await toggleContent(opts.instanceDir, 'mod', item.fileName, false)
+        disabled.push(item.displayName)
+      } catch (err) {
+        failed.push(`${item.displayName}: ${(err as Error).message}`)
+      }
+    }
+  }
+  return { updated, disabled, failed }
 }

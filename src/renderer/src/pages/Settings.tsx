@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Check,
   ChevronRight,
   Cpu,
   Download,
@@ -31,6 +30,7 @@ import type {
 } from '@shared/types'
 import { themeArt } from '../components/bits'
 import { cleanError } from '../util'
+import { SaveIndicator, type SaveState } from '../components/SaveIndicator'
 
 /** Six forge worlds, each with its own generated key art and material palette. */
 const THEMES: { id: ThemeId; name: string; latin: string }[] = [
@@ -79,7 +79,6 @@ function cfStatusText(cf: ProviderStatus['curseforge']): string {
   }
 }
 
-type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
 /** Typing and dragging settle for this long before they are written. */
 const DEBOUNCE_MS = 400
@@ -150,28 +149,6 @@ function useAutoSave(): {
   )
 
   return { form, change, flush, state }
-}
-
-function SaveIndicator({ state }: { state: SaveState }): JSX.Element {
-  return (
-    <div className={`save-indicator ${state}`} role="status" aria-live="polite">
-      {state === 'saving' ? (
-        <>
-          <Loader2 size={13} className="spin" /> Saving…
-        </>
-      ) : state === 'saved' ? (
-        <>
-          <Check size={13} /> Saved
-        </>
-      ) : state === 'error' ? (
-        <>
-          <TriangleAlert size={13} /> Not saved
-        </>
-      ) : (
-        <>Changes save automatically</>
-      )}
-    </div>
-  )
 }
 
 export function Settings(): JSX.Element {

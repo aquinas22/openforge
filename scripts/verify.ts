@@ -50,6 +50,10 @@ import { installerUrl, processorOutputs, resolveProfileValue } from '../src/main
 import { stageFromLogLine } from '../src/main/core/launcher'
 import { gcArgs, recommendedRamMb, tunedJvmArgs } from '../src/shared/tuning'
 import { diagnoseCrash, explainError } from '../src/shared/errors'
+import { installContent } from '../src/main/core/content'
+import type { ModrinthClient } from '../src/main/core/modrinth'
+import type { ContentVersion, Instance } from '../src/shared/types'
+import { loaderMatches, projectFit } from '../src/shared/compat'
 import { applySettingsPatch, defaultSettings, effectiveProvider, migrateSettings, SETTINGS_VERSION } from '../src/shared/settings'
 
 let failures = 0
@@ -863,6 +867,109 @@ function settingsSuite(): void {
   ok(effectiveProvider(undefined, true) === 'curseforge', 'no saved value means CurseForge')
 }
 
+// -- Content compatibility -------------------------------------------------------------
+
+function compatSuite(): void {
+  section('Content compatibility')
+  ok(loaderMatches(['fabric'], 'fabric'), 'Fabric build fits Fabric')
+  ok(!loaderMatches(['neoforge'], 'forge'), 'a NeoForge-only build does not fit Forge')
+  ok(!loaderMatches(['forge'], 'neoforge'), 'a Forge-only build does not fit NeoForge')
+  ok(loaderMatches(['NeoForge'], 'neoforge'), 'loader tags are case-insensitive')
+  ok(loaderMatches(['fabric'], 'quilt'), 'Quilt accepts Fabric builds')
+  ok(!loaderMatches(['quilt'], 'fabric'), 'Fabric does not accept Quilt-only builds')
+  ok(!loaderMatches(['fabric'], 'vanilla'), 'vanilla runs no mods')
+
+  const inst = { mcVersion: '1.20.1', loader: 'fabric' as const }
+  ok(projectFit({ gameVersions: ['1.20.1'], loaders: ['fabric'] }, inst, 'mod').fit === 'compatible', 'listed version and loader fit')
+  ok(projectFit({ gameVersions: ['1.21'], loaders: ['fabric'] }, inst, 'mod').fit === 'incompatible', 'wrong game version is flagged')
+  ok(projectFit({ gameVersions: ['1.20.1'], loaders: ['forge'] }, inst, 'mod').fit === 'incompatible', 'wrong loader is flagged')
+  ok(projectFit({ gameVersions: [], loaders: [] }, inst, 'mod').fit === 'unknown', 'missing listing data is unknown, not incompatible')
+  ok(projectFit({ gameVersions: ['1.20.1'], loaders: ['forge'] }, inst, 'resourcepack').fit === 'compatible', 'packs ignore the loader')
+  ok(projectFit({ gameVersions: ['1.20.1'], loaders: ['fabric'] }, { mcVersion: '1.20.1', loader: 'vanilla' }, 'mod').fit === 'incompatible', 'mods on vanilla are flagged')
+}
+
+// -- Adding content to an instance: dependencies and replacement -----------------------
+
+async function contentInstallSuite(fixture: Fixture): Promise<void> {
+  section('Adding content to an instance')
+  const instanceDir = makeTempDir('content')
+  mkdirSync(join(instanceDir, 'mods'), { recursive: true })
+
+  const handmade = Buffer.from('a Fabric API jar someone dropped in by hand')
+  writeFileSync(join(instanceDir, 'mods', 'fabric-api-handmade.jar'), handmade)
+  const mainJar = Buffer.from('the main mod')
+  const depV2 = Buffer.from('fabric api, newer build')
+  fixture.files.set('/cdn/main-1.0.jar', mainJar)
+  fixture.files.set('/cdn/fabric-api-2.jar', depV2)
+
+  const version = (projectId: string, id: string, fileName: string, body: Buffer, deps: string[] = []): ContentVersion => ({
+    provider: 'modrinth',
+    id,
+    projectId,
+    name: id,
+    versionNumber: id,
+    releaseType: 'release',
+    datePublished: '2026-01-01',
+    downloads: 0,
+    gameVersions: ['1.20.1'],
+    loaders: ['fabric'],
+    fileName,
+    fileSize: body.length,
+    downloadUrl: `${fixture.base}/cdn/${fileName}`,
+    sha512: sha512(body),
+    dependencies: deps.map((projectId) => ({ projectId }))
+  })
+  const versions: Record<string, ContentVersion[]> = {
+    main: [version('main', 'main-1', 'main-1.0.jar', mainJar, ['fabric-api'])],
+    'fabric-api': [version('fabric-api', 'api-2', 'fabric-api-2.jar', depV2)]
+  }
+  let downloadsOfDependency = 0
+  const modrinth = {
+    getVersions: async (id: string) => {
+      if (id === 'fabric-api') downloadsOfDependency++
+      return versions[id] ?? []
+    },
+    getProject: async (id: string) => ({ name: id === 'main' ? 'Main Mod' : 'Fabric API' }),
+    // Modrinth recognises the hand-added jar by its hash.
+    versionsForHashes: async (hashes: string[]) =>
+      Object.fromEntries(
+        hashes.filter((h) => h === sha512(handmade)).map((h) => [h, { ...versions['fabric-api'][0], projectId: 'fabric-api' }])
+      )
+  } as unknown as ModrinthClient
+  const clients = { modrinth, cf: new CfClient('', '', '') }
+  const instance = {
+    id: 'x',
+    name: 'Test',
+    mcVersion: '1.20.1',
+    loader: 'fabric',
+    source: 'vanilla',
+    createdAt: '',
+    installed: true
+  } as Instance
+
+  const added = await installContent({ clients, instance, instanceDir, provider: 'modrinth', projectId: 'main', kind: 'mod' })
+  ok(added.installed.includes('Main Mod'), 'the chosen mod is installed')
+  ok(existsSync(join(instanceDir, 'mods', 'main-1.0.jar')), 'its jar lands in mods/')
+  ok(added.dependencies.length === 0 && downloadsOfDependency === 0, 'a dependency already present (hand-added, known by hash) is not downloaded again')
+  ok(!existsSync(join(instanceDir, 'mods', 'fabric-api-2.jar')), 'no duplicate dependency jar is written')
+
+  const updated = await installContent({
+    clients,
+    instance,
+    instanceDir,
+    provider: 'modrinth',
+    projectId: 'fabric-api',
+    kind: 'mod',
+    versionId: 'api-2',
+    replaceFileName: 'fabric-api-handmade.jar'
+  })
+  ok(updated.installed.includes('Fabric API'), 'an update of an untracked file installs the new build')
+  ok(existsSync(join(instanceDir, 'mods', 'fabric-api-2.jar')), 'the new build is on disk')
+  ok(!existsSync(join(instanceDir, 'mods', 'fabric-api-handmade.jar')), 'the replaced file is removed, so the game never loads both')
+
+  await rm(instanceDir, { recursive: true, force: true })
+}
+
 async function main(): Promise<void> {
   console.log('Openforge core verification')
   const fixture = await startFixtureServer()
@@ -880,6 +987,8 @@ async function main(): Promise<void> {
     loaderProfileSuite()
     tuningSuite()
     settingsSuite()
+    compatSuite()
+    await contentInstallSuite(fixture)
     await liveConnectivity()
   } finally {
     fixture.server.close()
