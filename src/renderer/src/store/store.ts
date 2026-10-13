@@ -190,7 +190,7 @@ export const useStore = create<State>((set, get) => ({
     set({ settings, systemInfo, accounts, instances, providers, ready: true })
 
     get().refreshPlayStatus()
-    // Signing in to the official launcher happens outside Openforge; look
+    // Signing in to the official launcher happens outside OpenForge; look
     // again whenever the player comes back to this window.
     window.addEventListener('focus', () => get().refreshPlayStatus())
     get().refreshJava()

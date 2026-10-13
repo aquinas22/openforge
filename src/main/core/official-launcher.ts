@@ -82,7 +82,7 @@ async function updateProfiles(
 
 /**
  * Mirror immutable game artifacts into the official launcher's shared store,
- * then point a launcher installation at Openforge's instance directory.
+ * then point a launcher installation at OpenForge's instance directory.
  */
 export async function registerOfficialProfile(
   paths: GamePaths,
@@ -106,7 +106,7 @@ export async function registerOfficialProfile(
     javaArgs: `-Xmx${instance.ramMb ?? settings.ramMb}M ${settings.jvmArgs}`.trim(),
     lastUsed: now,
     lastVersionId: versionId,
-    name: `Openforge · ${instance.name}`,
+    name: `OpenForge · ${instance.name}`,
     type: 'custom'
   }
 

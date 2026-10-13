@@ -6,10 +6,10 @@ import { getJson, HttpError, postForm, postJson } from './http'
  * The chain Mojang requires is: Microsoft identity -> Xbox Live -> XSTS ->
  * Minecraft services. We use the OAuth 2.0 device code flow, which is the right
  * shape for a desktop app: the user finishes sign-in in their own browser and
- * Openforge never sees a password, and there is no embedded webview holding
+ * OpenForge never sees a password, and there is no embedded webview holding
  * Microsoft credentials.
  *
- * Openforge ships no client id of its own. Microsoft only issues Minecraft
+ * OpenForge ships no client id of its own. Microsoft only issues Minecraft
  * sign-in permission to a registered Azure application, so the user supplies one
  * (Settings -> Accounts explains how, and it takes about two minutes). Without
  * it, online play falls back to handing off to the official Minecraft Launcher.

@@ -1,6 +1,6 @@
 # Re-enabling Microsoft sign-in
 
-Openforge 2.1 ships with Microsoft sign-in switched off. Players either play offline (allowed only on
+OpenForge 2.1 ships with Microsoft sign-in switched off. Players either play offline (allowed only on
 a PC where the official Minecraft Launcher has an account that owns Java Edition) or hand off to the
 official launcher. This document is the plan for bringing native Microsoft sign-in back.
 
@@ -15,11 +15,11 @@ Microsoft and may have changed. Check it against the current documentation befor
 
 1. Sign in to the Azure portal (<https://portal.azure.com>) with the Microsoft account that will own
    the app. Go to **Microsoft Entra ID -> App registrations -> New registration**.
-2. **Name**: `Openforge`.
+2. **Name**: `OpenForge`.
 3. **Supported account types**: *Personal Microsoft accounts only*. Minecraft accounts are consumer
-   Microsoft accounts, and Openforge already uses the `consumers` authority
+   Microsoft accounts, and OpenForge already uses the `consumers` authority
    (`https://login.microsoftonline.com/consumers/oauth2/v2.0/...`).
-4. **Redirect URI**: Openforge uses the OAuth 2.0 **device code flow**, which needs no redirect URI.
+4. **Redirect URI**: OpenForge uses the OAuth 2.0 **device code flow**, which needs no redirect URI.
    If a loopback/browser flow is added later, register it under the platform
    *Mobile and desktop applications* (for example `http://localhost`).
 5. After creating it, open **Authentication -> Advanced settings** and set
@@ -100,7 +100,7 @@ reappear as soon as the switch below is turned back on.
    `src/shared/settings.ts`), so it can stay as an advanced override.
 3. **IPC.** Call `registerMicrosoftSignIn({ accounts, settings: () => settings, send })` from
    `registerIpc` in `src/main/ipc.ts`. Add `startMicrosoftLogin`, `cancelMicrosoftLogin` and
-   `onAuthEvent` back to `OpenforgeApi` in `src/shared/ipc.ts` and to `src/preload/index.ts`, using
+   `onAuthEvent` back to `OpenForgeApi` in `src/shared/ipc.ts` and to `src/preload/index.ts`, using
    the channel names in `MS_AUTH_IPC` (`accounts:msStart`, `accounts:msCancel`, `evt:auth`). The
    `AuthEvent` type is still in `src/shared/ipc.ts`.
 4. **Renderer.** Restore the store actions (`startMicrosoftLogin`, `cancelMicrosoftLogin`,
@@ -125,9 +125,9 @@ Today offline play is allowed by `checkOfflinePlayAllowed(minecraftDir)` in
 Edition profile. It is the only place that decides, and it is called in two places in
 `src/main/ipc.ts` (the `playStatus` handler and `launchInstance`).
 
-With real sign-in, change it to use the stronger evidence Openforge then has:
+With real sign-in, change it to use the stronger evidence OpenForge then has:
 
-1. A signed-in Microsoft account in Openforge with `entitled === true` (or a Java profile, see the
+1. A signed-in Microsoft account in OpenForge with `entitled === true` (or a Java profile, see the
    Game Pass note) allows offline profiles too.
 2. Keep the launcher-account check as a second way to pass, so players who only use the official
    launcher are not locked out.

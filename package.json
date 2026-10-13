@@ -1,7 +1,7 @@
 {
   "name": "openforge",
-  "version": "2.1.0",
-  "description": "Openforge — a Minecraft launcher for Windows: Modrinth + CurseForge modpacks, texture packs, shaders, managed Java, offline play for owners, and a hand-off to the official launcher.",
+  "version": "2.2.0",
+  "description": "OpenForge — a Minecraft launcher for Windows: Modrinth + CurseForge modpacks, texture packs, shaders, managed Java, offline play for owners, and a hand-off to the official launcher.",
   "author": "Noah Roe",
   "license": "MIT",
   "main": "./out/main/index.js",
@@ -19,7 +19,8 @@
     "dist:portable:linux": "electron-vite build && electron-builder --win portable --x64 -c.win.signAndEditExecutable=false",
     "release:windows:linux": "bash scripts/build-windows-linux.sh",
     "verify": "esbuild scripts/verify.ts --bundle --platform=node --format=esm --packages=external --outfile=.build-tmp/verify.mjs --log-level=warning && node .build-tmp/verify.mjs",
-    "check": "npm run typecheck && npm run verify"
+    "verify:servers": "esbuild scripts/verify-servers.ts --bundle --platform=node --format=esm --packages=external --outfile=.build-tmp/verify-servers.mjs --log-level=warning && node .build-tmp/verify-servers.mjs",
+    "check": "npm run typecheck && npm run verify && npm run verify:servers"
   },
   "dependencies": {
     "adm-zip": "^0.5.16"

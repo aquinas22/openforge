@@ -24,6 +24,8 @@ import type {
   RetargetPlan,
   RetargetResult,
   ServerConfig,
+  RemoteHostInfo,
+  ServerDeploymentProgress,
   ServerFolderInfo,
   ServerLogLine,
   ServerStatus,
@@ -98,7 +100,7 @@ export interface PackUpdateInfo {
 }
 
 /** The full surface exposed to the renderer as `window.openforge`. */
-export interface OpenforgeApi {
+export interface OpenForgeApi {
   // -- Settings & system ------------------------------------------------------
   getSettings(): Promise<Settings>
   saveSettings(patch: Partial<Settings>): Promise<Settings>
@@ -205,6 +207,10 @@ export interface OpenforgeApi {
   inspectServerFolder(dir: string): Promise<ServerFolderInfo>
   acceptServerEula(id: string): Promise<void>
   createLocalServer(input: CreateLocalServerInput): Promise<ServerConfig>
+  inspectRemoteHost(input: RemoteSshTarget): Promise<RemoteHostInfo>
+  deployRemoteServer(input: DeployRemoteServerInput): Promise<SshServerConfig>
+  cancelServerDeployment(requestId: string): Promise<void>
+  importRemoteServer(input: RemoteSshTarget, slug: string): Promise<SshServerConfig>
 
   // -- OS integration ---------------------------------------------------------
   pickDirectory(): Promise<string | null>
@@ -221,6 +227,29 @@ export interface OpenforgeApi {
   onLog(cb: (e: LogLine) => void): () => void
   onServerLog(cb: (e: ServerLogLine) => void): () => void
   onServerStatus(cb: (e: ServerStatus) => void): () => void
+  onServerDeployment(cb: (e: ServerDeploymentProgress) => void): () => void
+}
+
+export interface RemoteSshTarget {
+  host: string
+  port: number
+  user: string
+  identityFile: string
+}
+
+export interface DeployRemoteServerInput {
+  requestId: string
+  target: RemoteSshTarget
+  name: string
+  /** One directory name under ~/minecraft-servers, never a path. */
+  slug: string
+  source: 'vanilla' | Provider
+  mcVersion?: string
+  projectId?: string
+  versionId?: string
+  ramMb: number
+  gamePort: number
+  acceptEula: boolean
 }
 
 /** What the server form sends: a config without the fields the main process assigns. */
@@ -343,6 +372,10 @@ export const IPC = {
   inspectServerFolder: 'servers:inspectFolder',
   setServerEula: 'servers:eula',
   createLocalServer: 'servers:createLocal',
+  inspectRemoteHost: 'servers:inspectRemoteHost',
+  deployRemoteServer: 'servers:deployRemote',
+  cancelServerDeployment: 'servers:cancelDeployment',
+  importRemoteServer: 'servers:importRemote',
 
   pickDirectory: 'dialog:pickDir',
   pickFile: 'dialog:pickFile',
@@ -356,5 +389,6 @@ export const IPC = {
   progressEvent: 'evt:progress',
   logEvent: 'evt:log',
   serverLogEvent: 'evt:serverLog',
-  serverStatusEvent: 'evt:serverStatus'
+  serverStatusEvent: 'evt:serverStatus',
+  serverDeploymentEvent: 'evt:serverDeployment'
 } as const

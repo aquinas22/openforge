@@ -75,6 +75,8 @@ export interface ContentVersion {
   dependencies?: ContentDependency[]
   /** CurseForge server packs are not installable as a client instance. */
   isServerPack?: boolean
+  /** CurseForge's server distribution paired with this client pack version. */
+  serverPackFileId?: string
 }
 
 export interface ContentSearchResult {
@@ -179,12 +181,12 @@ export interface JavaInfo {
   version: string
   majorVersion: number
   arch?: string
-  /** True when Openforge downloaded and manages this runtime itself. */
+  /** True when OpenForge downloaded and manages this runtime itself. */
   managed?: boolean
   vendor?: string
 }
 
-/** A Temurin runtime Openforge can fetch on demand. */
+/** A Temurin runtime OpenForge can fetch on demand. */
 export interface JavaRuntimeStatus {
   majorVersion: number
   installed: boolean
@@ -201,9 +203,9 @@ export type UiStyle = 'modern' | 'classic'
 
 /**
  * How a launch is performed.
- *  - `direct`   : Openforge runs the JVM itself, using the selected account
+ *  - `direct`   : OpenForge runs the JVM itself, using the selected account
  *                 (Microsoft for online play, or an offline profile).
- *  - `official` : Openforge prepares the install and hands off to the official
+ *  - `official` : OpenForge prepares the install and hands off to the official
  *                 Minecraft Launcher, which owns authentication.
  */
 export type LaunchMode = 'direct' | 'official'
@@ -515,7 +517,7 @@ export interface CfSearchResult {
 }
 
 // -- Servers ------------------------------------------------------------------------
-// A local server runs as a child process of Openforge; an SSH server is driven
+// A local server runs as a child process of OpenForge; an SSH server is driven
 // with the system ssh client. Configs live in servers.json in the data folder.
 
 export type ServerKind = 'local' | 'ssh'
@@ -527,7 +529,7 @@ export interface LocalServerConfig {
   createdAt: string
   /** The server folder (holds server.properties, world/, logs/). */
   dir: string
-  /** Run a server jar with Openforge's Java and memory, or the folder's own script. */
+  /** Run a server jar with OpenForge's Java and memory, or the folder's own script. */
   launch: 'jar' | 'script'
   /** File name inside `dir`: the jar, or run.bat / run.sh / start.ps1. */
   file: string
@@ -556,7 +558,7 @@ export interface SshServerConfig {
   session: string
   /** systemd unit name. */
   unit: string
-  /** Remote server folder, e.g. ~/server. */
+  /** Remote server folder, e.g. ~/minecraft-servers/survival. */
   serverDir: string
   /** Start script, run inside serverDir, e.g. ./run.sh. */
   startScript: string
@@ -569,6 +571,45 @@ export interface SshServerConfig {
   /** Template for sending a console command; {cmd} is replaced, quoted. */
   sendCommand: string
   tailCommand: string
+  /** Present for servers provisioned under ~/minecraft-servers. */
+  deployment?: RemoteServerDeployment
+}
+
+export const REMOTE_SERVERS_ROOT = '~/minecraft-servers'
+
+export interface RemoteServerDeployment {
+  slug: string
+  source: 'vanilla' | Provider
+  mcVersion: string
+  loader: LoaderType
+  loaderVersion?: string
+  projectId?: string
+  versionId?: string
+  ramMb: number
+  gamePort: number
+  javaMajor: number
+}
+
+export interface RemoteServerSummary {
+  slug: string
+  name: string
+  directory: string
+  deployment?: RemoteServerDeployment
+}
+
+export interface RemoteHostInfo {
+  root: string
+  pythonVersion: string
+  javaVersion: string | null
+  tmux: boolean
+  freeDiskMb: number
+  servers: RemoteServerSummary[]
+}
+
+export interface ServerDeploymentProgress {
+  requestId: string
+  phase: 'resolving' | 'uploading' | 'extracting' | 'downloading' | 'java' | 'loader' | 'ready' | 'error'
+  message: string
 }
 
 export type ServerConfig = LocalServerConfig | SshServerConfig

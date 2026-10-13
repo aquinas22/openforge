@@ -495,7 +495,7 @@ async function liveConnectivity(): Promise<void> {
   for (const [name, url] of targets) {
     try {
       const res = await fetch(url, {
-        headers: { 'User-Agent': 'Openforge verify' },
+        headers: { 'User-Agent': 'OpenForge verify' },
         signal: AbortSignal.timeout(12_000)
       })
       const note = name === 'CurseForge CDN' && res.status === 403 ? ' (reachable; the bucket root refuses listing by design)' : ''
@@ -1154,7 +1154,7 @@ function sshSuite(): void {
     const cfg = sshCfg({ session: hostileSession, serverDir: '~/my server' })
     const sent = spawnSync(sh, ['-c', fake('tmux') + presetCommands(cfg).send('say $(whoami) "hi"')!], { encoding: 'utf8' }).stdout
     ok(
-      sent.split('\n')[0] === `[send-keys][-t][${hostileSession}][-l][--][say $(whoami) "hi"]`,
+      sent.split('\n')[0] === `[send-keys][-t][=${hostileSession}][-l][--][say $(whoami) "hi"]`,
       'tmux send-keys gets the session and the command as literal arguments',
       sent.split('\n')[0]
     )
@@ -1330,7 +1330,7 @@ async function localServerSuite(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  console.log('Openforge core verification')
+  console.log('OpenForge core verification')
   const fixture = await startFixtureServer()
   try {
     pureAlgorithms()

@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-Write-Host "`nOpenforge Windows Builder" -ForegroundColor Green
+Write-Host "`nOpenForge Windows Builder" -ForegroundColor Green
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   throw "Node.js was not found. Install Node.js 20 LTS or newer from https://nodejs.org, then reopen PowerShell."

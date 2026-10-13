@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join } from 'node:path'
-import { IPC, type CreateLocalServerInput } from '@shared/ipc'
+import { IPC, type CreateLocalServerInput, type DeployRemoteServerInput, type RemoteSshTarget } from '@shared/ipc'
 import type {
   LocalServerConfig,
   ServerConfig,
@@ -28,6 +28,8 @@ import { PlayerTracker } from './core/servers/logparse'
 import { runSsh, streamSsh } from './core/servers/sshrun'
 import { fetchVersionDetail, fetchVersionManifest } from './core/manifest'
 import { downloadFile } from './core/http'
+import type { CfClient } from './core/curseforge'
+import { deployRemoteServer, importRemoteServer, inspectRemoteHost } from '../../servers'
 
 /**
  * The Servers section: local servers run as child processes, SSH servers are
@@ -43,6 +45,7 @@ interface Deps {
   /** A Java for this major version (managed download if needed), or null. */
   resolveJava: (major: number) => Promise<string | null>
   maxRamMb: number
+  cfClient: () => CfClient
 }
 
 export function registerServerIpc(deps: Deps): { shutdown: () => Promise<void> } {
@@ -52,6 +55,7 @@ export function registerServerIpc(deps: Deps): { shutdown: () => Promise<void> }
   const trackers = new Map<string, PlayerTracker>()
   const local = new Map<string, ServerProcess>()
   const tails = new Map<string, { stop: () => void }>()
+  const deployments = new Map<string, AbortController>()
 
   const send = (channel: string, payload: unknown): void => deps.getWindow()?.webContents.send(channel, payload)
   const persist = (): void => saveServers(configs)
@@ -67,11 +71,13 @@ export function registerServerIpc(deps: Deps): { shutdown: () => Promise<void> }
   }
   const statusOf = (id: string): ServerStatus => status.get(id) ?? { id, state: find(id).kind === 'local' ? 'stopped' : 'unknown' }
   const setStatus = (id: string, patch: Partial<ServerStatus>): void => {
+    if (!configs.some((cfg) => cfg.id === id)) return
     const next = { ...statusOf(id), ...patch, id }
     status.set(id, next)
     send(IPC.serverStatusEvent, next)
   }
   const log = (id: string, stream: ServerLogLine['stream'], line: string): void => {
+    if (!configs.some((cfg) => cfg.id === id)) return
     const entry: ServerLogLine = { serverId: id, stream, line, ts: Date.now() }
     const list = logs.get(id) ?? []
     list.push(entry)
@@ -88,7 +94,7 @@ export function registerServerIpc(deps: Deps): { shutdown: () => Promise<void> }
       setStatus(id, patch)
     }
   }
-  const system = (id: string, line: string): void => log(id, 'system', `[Openforge] ${line}`)
+  const system = (id: string, line: string): void => log(id, 'system', `[OpenForge] ${line}`)
 
   // -- Validation ----------------------------------------------------------------------
   const text = (value: unknown, max: number, what: string): string => {
@@ -147,14 +153,15 @@ export function registerServerIpc(deps: Deps): { shutdown: () => Promise<void> }
       control,
       session,
       unit,
-      serverDir: text(i.serverDir, 400, 'server folder').trim() || '~/server',
+      serverDir: text(i.serverDir, 400, 'server folder').trim() || '~/minecraft-servers/server',
       startScript: text(i.startScript, 400, 'start script').trim() || './run.sh',
       logPath: text(i.logPath, 400, 'log path').trim(),
       startCommand: text(i.startCommand, 2000, 'start command'),
       stopCommand: text(i.stopCommand, 2000, 'stop command'),
       statusCommand: text(i.statusCommand, 2000, 'status command'),
       sendCommand: text(i.sendCommand, 2000, 'send command'),
-      tailCommand: text(i.tailCommand, 2000, 'log command')
+      tailCommand: text(i.tailCommand, 2000, 'log command'),
+      deployment: existing?.kind === 'ssh' ? existing.deployment : undefined
     }
   }
 
@@ -251,6 +258,7 @@ export function registerServerIpc(deps: Deps): { shutdown: () => Promise<void> }
       buildSshArgs(cfg, command, { connectTimeout: 10 }),
       (stream, line) => log(cfg.id, stream, line),
       (code, stderr) => {
+        if (tails.get(cfg.id) !== handle) return
         tails.delete(cfg.id)
         const failure = code === 255 || code === -1 ? classifySshError(stderr, code) : null
         system(cfg.id, failure ? `Log stream failed: ${failure.message}` : `Log stream ended (code ${code ?? 'none'}).`)
@@ -262,6 +270,34 @@ export function registerServerIpc(deps: Deps): { shutdown: () => Promise<void> }
   }
 
   // -- IPC ------------------------------------------------------------------------------------
+  const addRemote = (cfg: SshServerConfig): SshServerConfig => {
+    const existing = configs.find((entry) => entry.kind === 'ssh' && entry.host === cfg.host && entry.port === cfg.port &&
+      entry.user === cfg.user && entry.serverDir === cfg.serverDir)
+    if (existing?.kind === 'ssh') return existing
+    configs = [...configs, cfg]
+    persist()
+    return cfg
+  }
+  ipcMain.handle(IPC.inspectRemoteHost, (_e, target: RemoteSshTarget) => inspectRemoteHost(target))
+  ipcMain.handle(IPC.importRemoteServer, async (_e, target: RemoteSshTarget, slug: string) => addRemote(await importRemoteServer(target, slug)))
+  ipcMain.handle(IPC.deployRemoteServer, async (_e, input: DeployRemoteServerInput) => {
+    if (deployments.has(input.requestId)) throw new Error('This deployment is already running.')
+    const controller = new AbortController()
+    deployments.set(input.requestId, controller)
+    try {
+      const cfg = await deployRemoteServer(input, {
+        cf: deps.cfClient(), signal: controller.signal,
+        report: (event) => send(IPC.serverDeploymentEvent, event)
+      })
+      return addRemote(cfg)
+    } catch (error) {
+      send(IPC.serverDeploymentEvent, { requestId: input.requestId, phase: 'error', message: controller.signal.aborted ? 'Deployment cancelled.' : (error as Error).message })
+      throw error
+    } finally {
+      deployments.delete(input.requestId)
+    }
+  })
+  ipcMain.handle(IPC.cancelServerDeployment, (_e, requestId: string) => deployments.get(requestId)?.abort())
   ipcMain.handle(IPC.listServers, () => configs)
   ipcMain.handle(IPC.serverStatuses, () => configs.map((c) => statusOf(c.id)))
   ipcMain.handle(IPC.serverLog, (_e, id: string) => logs.get(String(id)) ?? [])
@@ -273,6 +309,12 @@ export function registerServerIpc(deps: Deps): { shutdown: () => Promise<void> }
       throw new Error('Stop the server before changing its settings.')
     }
     const cfg = normalize(input, existing)
+    if (existing?.kind === 'ssh') {
+      tails.get(existing.id)?.stop()
+      tails.delete(existing.id)
+      status.delete(existing.id)
+      trackers.delete(existing.id)
+    }
     configs = existing ? configs.map((c) => (c.id === cfg.id ? cfg : c)) : [...configs, cfg]
     persist()
     return cfg
@@ -282,6 +324,8 @@ export function registerServerIpc(deps: Deps): { shutdown: () => Promise<void> }
     const cfg = find(id)
     if (cfg.kind === 'local' && local.get(cfg.id)?.running) throw new Error('Stop the server before removing it.')
     tails.get(cfg.id)?.stop()
+    tails.delete(cfg.id)
+    trackers.delete(cfg.id)
     configs = configs.filter((c) => c.id !== cfg.id)
     status.delete(cfg.id)
     logs.delete(cfg.id)
@@ -402,7 +446,7 @@ export function registerServerIpc(deps: Deps): { shutdown: () => Promise<void> }
   ipcMain.handle(IPC.setServerEula, async (_e, id: string) => {
     const cfg = find(id)
     if (cfg.kind !== 'local') return
-    await writeFile(join(cfg.dir, 'eula.txt'), `# Accepted in Openforge on ${new Date().toISOString()}\n# https://aka.ms/MinecraftEULA\neula=true\n`, 'utf8')
+    await writeFile(join(cfg.dir, 'eula.txt'), `# Accepted in OpenForge on ${new Date().toISOString()}\n# https://aka.ms/MinecraftEULA\neula=true\n`, 'utf8')
     system(cfg.id, 'EULA accepted (eula.txt).')
   })
 
@@ -420,7 +464,7 @@ export function registerServerIpc(deps: Deps): { shutdown: () => Promise<void> }
     await mkdir(dir, { recursive: true })
     await downloadFile({ url: server.url, dest: join(dir, 'server.jar'), sha1: server.sha1, size: server.size })
     if (input.acceptEula) {
-      await writeFile(join(dir, 'eula.txt'), `# Accepted in Openforge on ${new Date().toISOString()}\n# https://aka.ms/MinecraftEULA\neula=true\n`, 'utf8')
+      await writeFile(join(dir, 'eula.txt'), `# Accepted in OpenForge on ${new Date().toISOString()}\n# https://aka.ms/MinecraftEULA\neula=true\n`, 'utf8')
     }
     const cfg = normalize({
       kind: 'local',
@@ -441,6 +485,7 @@ export function registerServerIpc(deps: Deps): { shutdown: () => Promise<void> }
   return {
     /** On quit: stop local servers gracefully (bounded), end log streams. */
     async shutdown() {
+      for (const controller of deployments.values()) controller.abort()
       for (const handle of tails.values()) handle.stop()
       await Promise.all(
         configs

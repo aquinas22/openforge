@@ -1,4 +1,4 @@
-// Capture the README screenshots from a built Openforge, using only demo data.
+// Capture the README screenshots from a built OpenForge, using only demo data.
 //
 //   npm run build            (with OPENFORGE_CF_KEY set if CurseForge results should show)
 //   node scripts/screenshots.mjs
@@ -8,7 +8,7 @@
 // folder whose launcher_accounts.json holds an obviously fake profile
 // ("DemoPlayer"). It then starts the unpackaged app with OPENFORGE_USER_DATA and
 // OPENFORGE_MINECRAFT_DIR pointing there (both ignored by packaged builds), so
-// the real Openforge data folder and the real .minecraft are never read or
+// the real OpenForge data folder and the real .minecraft are never read or
 // written. It drives the window over the Chrome DevTools Protocol and writes
 // PNGs to docs/screenshots/.
 //
@@ -45,7 +45,7 @@ const serverDir = join(demoRoot, 'servers', 'cozy-smp')
 
 function refuseRealData() {
   const appData = process.env.APPDATA ?? ''
-  const forbidden = [join(appData, 'Openforge'), join(appData, '.minecraft')].filter((p) => appData && p)
+  const forbidden = [join(appData, 'OpenForge'), join(appData, 'Openforge'), join(appData, '.minecraft')].filter((p) => appData && p)
   const norm = (p) => resolve(p).toLowerCase() + sep
   for (const real of forbidden) {
     if (norm(demoRoot).startsWith(norm(real)) || norm(real).startsWith(norm(demoRoot))) {

@@ -1,5 +1,5 @@
 /* ============================================================================
-   Openforge — design system
+   OpenForge — design system
    Forged iron, ember light, and expansive crafted worlds. The interface keeps
    the directness of a game launcher while giving artwork and typography room.
    ============================================================================ */
@@ -316,6 +316,53 @@ button {
 .brand-mark {
   object-fit: contain;
   filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.26));
+}
+.remote-setup-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.remote-host-info,
+.remote-deploy-progress {
+  padding: 12px;
+  margin-bottom: 16px;
+  background: var(--stone);
+  border: 1px solid var(--lode);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.remote-host-info .between {
+  gap: 12px;
+  margin-top: 8px;
+}
+.remote-deploy-progress {
+  max-height: 160px;
+  overflow: auto;
+  font-family: var(--font-mono);
+}
+.remote-deploy-progress p {
+  margin: 3px 0;
+}
+.remote-deploy-progress .error {
+  color: var(--danger);
+}
+.remote-pack-results {
+  display: grid;
+  gap: 6px;
+  max-height: 210px;
+  overflow: auto;
+  margin-bottom: 16px;
+}
+.remote-pack-result {
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  white-space: normal;
+}
+.remote-pack-result small {
+  color: var(--muted);
+  font-weight: 400;
 }
 .titlebar .brand small {
   color: var(--muted);

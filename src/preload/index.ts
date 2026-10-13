@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC } from '../shared/ipc'
-import type { OpenforgeApi } from '../shared/ipc'
-import type { LogLine, ProgressEvent, ServerLogLine, ServerStatus } from '../shared/types'
+import type { OpenForgeApi } from '../shared/ipc'
+import type { LogLine, ProgressEvent, ServerDeploymentProgress, ServerLogLine, ServerStatus } from '../shared/types'
 
 /** Subscribe to a main-process broadcast, returning an unsubscribe function. */
 function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
@@ -10,7 +10,7 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
   return () => ipcRenderer.removeListener(channel, listener)
 }
 
-const api: OpenforgeApi = {
+const api: OpenForgeApi = {
   getSettings: () => ipcRenderer.invoke(IPC.getSettings),
   saveSettings: (patch) => ipcRenderer.invoke(IPC.saveSettings, patch),
   getSystemInfo: () => ipcRenderer.invoke(IPC.getSystemInfo),
@@ -92,6 +92,10 @@ const api: OpenforgeApi = {
   inspectServerFolder: (dir) => ipcRenderer.invoke(IPC.inspectServerFolder, dir),
   acceptServerEula: (id) => ipcRenderer.invoke(IPC.setServerEula, id),
   createLocalServer: (input) => ipcRenderer.invoke(IPC.createLocalServer, input),
+  inspectRemoteHost: (input) => ipcRenderer.invoke(IPC.inspectRemoteHost, input),
+  deployRemoteServer: (input) => ipcRenderer.invoke(IPC.deployRemoteServer, input),
+  cancelServerDeployment: (requestId) => ipcRenderer.invoke(IPC.cancelServerDeployment, requestId),
+  importRemoteServer: (input, slug) => ipcRenderer.invoke(IPC.importRemoteServer, input, slug),
 
   pickDirectory: () => ipcRenderer.invoke(IPC.pickDirectory),
   pickFile: (filters) => ipcRenderer.invoke(IPC.pickFile, filters),
@@ -105,7 +109,8 @@ const api: OpenforgeApi = {
   onProgress: (cb) => subscribe<ProgressEvent>(IPC.progressEvent, cb),
   onLog: (cb) => subscribe<LogLine>(IPC.logEvent, cb),
   onServerLog: (cb) => subscribe<ServerLogLine>(IPC.serverLogEvent, cb),
-  onServerStatus: (cb) => subscribe<ServerStatus>(IPC.serverStatusEvent, cb)
+  onServerStatus: (cb) => subscribe<ServerStatus>(IPC.serverStatusEvent, cb),
+  onServerDeployment: (cb) => subscribe<ServerDeploymentProgress>(IPC.serverDeploymentEvent, cb)
 }
 
 contextBridge.exposeInMainWorld('openforge', api)

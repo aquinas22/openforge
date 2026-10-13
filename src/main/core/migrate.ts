@@ -1,17 +1,18 @@
 import { app } from 'electron'
-import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { cpSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 /**
  * Product renames move Electron's userData directory. Keep every known former
- * identity here so an Openforge install can adopt settings, instances, worlds,
+ * identity here so an OpenForge install can adopt settings, instances, worlds,
  * libraries, and assets without forcing a reinstall.
  */
-const LEGACY_DIR_NAMES = ['Ars Fodina', 'ars-fodina', 'aurora-launcher']
+const LEGACY_DIR_NAMES = ['Openforge', 'Ars Fodina', 'ars-fodina', 'aurora-launcher']
 const MARKER = 'settings.json'
 
 function moveInto(from: string, to: string): void {
+  mkdirSync(to, { recursive: true })
   for (const entry of readdirSync(from)) {
     const src = join(from, entry)
     const dest = join(to, entry)

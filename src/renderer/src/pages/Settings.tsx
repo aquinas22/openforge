@@ -216,13 +216,13 @@ export function Settings(): JSX.Element {
             [
               [
                 'direct',
-                'Offline - Openforge starts it',
+                'Offline - OpenForge starts it',
                 'Fast, with your offline profile. Needs an account that owns Minecraft signed in to the official launcher on this PC. Single-player, LAN and offline-mode servers.'
               ],
               [
                 'official',
                 'Minecraft Launcher - hand off',
-                'Openforge prepares the instance and opens the official launcher, which signs you in with Microsoft. Online servers and Realms.'
+                'OpenForge prepares the instance and opens the official launcher, which signs you in with Microsoft. Online servers and Realms.'
               ]
             ] as [LaunchMode, string, string][]
           ).map(([id, title, detail]) => (
@@ -470,7 +470,7 @@ export function Settings(): JSX.Element {
               ? `Found ${java.length} runtime${java.length === 1 ? '' : 's'}: Java ${java
                   .map((j) => j.majorVersion)
                   .join(', ')}.`
-              : 'No Java on this machine yet — with automatic management on, Openforge fetches one when you first play.'}
+              : 'No Java on this machine yet — with automatic management on, OpenForge fetches one when you first play.'}
           </div>
         </div>
       </Section>
@@ -499,7 +499,7 @@ export function Settings(): JSX.Element {
           {systemInfo && (
             <div className="hint" style={{ marginTop: 8 }}>
               This computer has {(systemInfo.totalMemoryMb / 1024).toFixed(1)} GB installed
-              ({systemInfo.platform}/{systemInfo.arch}). Openforge reserves enough for the OS and
+              ({systemInfo.platform}/{systemInfo.arch}). OpenForge reserves enough for the OS and
               background apps.
             </div>
           )}
@@ -655,7 +655,7 @@ export function Settings(): JSX.Element {
           <div>
             <label style={{ fontWeight: 600, fontSize: 13 }}>Hide launcher while playing</label>
             <div className="hint" style={{ marginTop: 2 }}>
-              Hide Openforge when Minecraft starts, then bring it back when the game closes.
+              Hide OpenForge when Minecraft starts, then bring it back when the game closes.
             </div>
           </div>
           <Toggle

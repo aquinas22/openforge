@@ -10,7 +10,7 @@ import { authenticateMinecraft, MicrosoftAuthError, pollForTokens, startDeviceCo
  *
  * To switch it back on: call `registerMicrosoftSignIn` from registerIpc(),
  * expose the two invoke channels and the event channel in the preload bridge
- * and OpenforgeApi, and restore the sign-in section of the account modal.
+ * and OpenForgeApi, and restore the sign-in section of the account modal.
  */
 export const MS_AUTH_IPC = {
   start: 'accounts:msStart',

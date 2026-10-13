@@ -1,4 +1,4 @@
-# Openforge
+# OpenForge
 
 A Minecraft: Java Edition launcher for Windows that installs modpacks, mods, texture packs and shaders
 from CurseForge and Modrinth, and keeps each setup in its own instance.
@@ -6,9 +6,9 @@ from CurseForge and Modrinth, and keeps each setup in its own instance.
 **[Download the latest release](https://github.com/aquinas22/openforge/releases/latest)** (Windows,
 64-bit)
 
-![The Openforge library](docs/screenshots/library.png)
+![The OpenForge library](docs/screenshots/library.png)
 
-Openforge is a hobby project by one person. It works well for the things listed below, and the
+OpenForge is a hobby project by one person. It works well for the things listed below, and the
 limits are listed too. It is not affiliated with, endorsed by, or connected to Mojang Studios or
 Microsoft. "Minecraft" is a trademark of Mojang Studios.
 
@@ -62,7 +62,7 @@ See [Servers](#servers) below.
 
 ### Settings that stay out of the way
 
-Settings save as you change them. Openforge downloads the right Java for each Minecraft version
+Settings save as you change them. OpenForge downloads the right Java for each Minecraft version
 (Eclipse Temurin 8, 17, 21 or 25) and reuses runtimes the official launcher already installed, so you
 don't need to install Java yourself. Six colour themes are included, one of them light.
 
@@ -85,10 +85,10 @@ Download one of these from the [releases page](https://github.com/aquinas22/open
 
 | File | What it is |
 | --- | --- |
-| `Openforge-<version>-x64.exe` | The installer. Adds Start menu and desktop shortcuts and an uninstaller. You can pick the install folder. No admin rights needed for a per-user install. |
-| `Openforge-<version>-portable.exe` | A single exe that runs without installing. Handy for trying Openforge out or keeping it on a USB drive. |
+| `OpenForge-<version>-x64.exe` | The installer. Adds Start menu and desktop shortcuts and an uninstaller. You can pick the install folder. No admin rights needed for a per-user install. |
+| `OpenForge-<version>-portable.exe` | A single exe that runs without installing. Handy for trying OpenForge out or keeping it on a USB drive. |
 
-Both keep their data (settings, instances, worlds) in `%APPDATA%\Openforge`, so you can switch
+Both keep their data (settings, instances, worlds) in `%APPDATA%\OpenForge`, so you can switch
 between them. Uninstalling does not delete that folder.
 
 ### "Windows protected your PC"
@@ -101,18 +101,18 @@ If you would rather not trust a prebuilt exe, you can [build it yourself](#build
 
 ## How to play
 
-Openforge does not have Microsoft sign-in right now, so there are two ways to start the game.
+OpenForge does not have Microsoft sign-in right now, so there are two ways to start the game.
 
-**1. Offline play from Openforge.** Openforge starts the game itself with an offline profile (a name
+**1. Offline play from OpenForge.** OpenForge starts the game itself with an offline profile (a name
 you choose). This only works on a PC where the **official Minecraft Launcher is installed and signed
-in** with an account that owns Minecraft: Java Edition. Openforge checks that such an account exists
+in** with an account that owns Minecraft: Java Edition. OpenForge checks that such an account exists
 in the launcher's files; it reads nothing else from them and never sees your password or tokens. If
-no account is found, Play stays locked and Openforge explains how to fix it.
+no account is found, Play stays locked and OpenForge explains how to fix it.
 
 Offline play covers single-player, LAN, and servers that run with `online-mode=false`. Servers that
 check accounts (most public servers) and Realms will refuse an offline profile.
 
-**2. Hand off to the official Minecraft Launcher.** Openforge prepares the instance, adds it as a
+**2. Hand off to the official Minecraft Launcher.** OpenForge prepares the instance, adds it as a
 profile in the official launcher, and opens it. The official launcher signs you in, so online
 servers and Realms work normally. Choose **Minecraft Launcher - hand off** in Settings to make Play
 always do this, or use **Open Minecraft Launcher** from the profile panel (bottom of the sidebar).
@@ -121,26 +121,31 @@ always do this, or use **Open Minecraft Launcher** from the profile panel (botto
 
 The **Servers** page manages servers you run yourself.
 
-- **Local:** point Openforge at a server folder (a server `.jar`, or a `run.bat` / `start.ps1` like
+- **Local:** point OpenForge at a server folder (a server `.jar`, or a `run.bat` / `start.ps1` like
   Forge and NeoForge servers use), or create a fresh vanilla server. Start and stop it, type into its
   console, and see players online and uptime. Stop sends `stop` and waits before killing the process,
-  and quitting Openforge stops running servers the same way.
+  and quitting OpenForge stops running servers the same way.
 - **Over SSH:** control a server on another machine through tmux, screen or systemd, send console
-  commands and stream its log. SSH needs **key authentication** (a key file or ssh-agent); Openforge
+  commands and stream its log. SSH needs **key authentication** (a key file or ssh-agent); OpenForge
   never asks for or stores a password. It uses the OpenSSH client built into Windows.
+- **Automatic SSH setup:** choose vanilla, a Modrinth pack, or a linked CurseForge server pack.
+  OpenForge creates a folder under ~/minecraft-servers, extracts server files, downloads dependencies,
+  installs the matching Java and mod loader, and adds start/stop/console controls. The host needs
+  Python 3.9+ and tmux. **Scan host** reconnects to previously deployed servers. See the
+  [server backend guide](servers/README.md) for requirements and API details.
 
 ## FAQ
 
 **Is it free? Do I still need to buy Minecraft?**
-Openforge is free and open source. You still need to own Minecraft: Java Edition; offline play only
+OpenForge is free and open source. You still need to own Minecraft: Java Edition; offline play only
 unlocks on a PC where the official launcher is signed in with an account that owns it.
 
 **Why no Microsoft sign-in?**
-New apps need Mojang's approval before they can use the Minecraft login services, and Openforge
+New apps need Mojang's approval before they can use the Minecraft login services, and OpenForge
 doesn't have that yet. The sign-in code exists but is switched off. See the roadmap below.
 
 **Where are my files?**
-Everything is under `%APPDATA%\Openforge`. The game files and instances are in its `minecraft`
+Everything is under `%APPDATA%\OpenForge`. The game files and instances are in its `minecraft`
 folder, which you can move in Settings. The **Game folder** button in the Library opens it.
 
 **Does it work on macOS or Linux?**
@@ -150,14 +155,14 @@ tested or supported.
 **CurseForge or Modrinth search fails on my school or work network.**
 Some networks inspect HTTPS traffic, which breaks the connection to Mojang, CurseForge and Modrinth.
 Settings -> Content providers -> Advanced has a connection check that says when this is happening.
-Openforge never turns off certificate checks to get around it; install your organisation's root
+OpenForge never turns off certificate checks to get around it; install your organisation's root
 certificate or use another network.
 
 **A modpack says some files have to be downloaded by hand.**
-A few CurseForge authors don't allow other launchers to download their files. Openforge lists those
+A few CurseForge authors don't allow other launchers to download their files. OpenForge lists those
 with direct links so you can fetch them yourself.
 
-**Does Openforge collect data?**
+**Does OpenForge collect data?**
 No. There is no telemetry. It talks to Mojang, CurseForge, Modrinth, the loader sites and Adoptium to
 download what you ask for.
 
@@ -185,7 +190,7 @@ Modrinth works in every build. CurseForge needs an API key, and there are three 
    built-in key, and Discover uses Modrinth.
 2. **Your own key.** Paste a free key from <https://console.curseforge.com> in Settings -> Content
    providers -> Advanced.
-3. **A proxy.** Point Openforge at a server that holds the key and forwards `/api/cf/search`,
+3. **A proxy.** Point OpenForge at a server that holds the key and forwards `/api/cf/search`,
    `/api/cf/packs/:id` and `/api/cf/packs/:id/files`.
 
 If more than one is set, the proxy wins, then your own key, then the built-in key.
@@ -194,7 +199,7 @@ If more than one is set, the proxy wins, then your own key, then the built-in ke
 
 `scripts/screenshots.mjs` regenerates the images in `docs/screenshots/`. It seeds a throwaway data
 folder with demo instances, a demo server and a stand-in launcher account, starts the built app
-against it, and drives it over the Chrome DevTools Protocol. It never reads your real Openforge data
+against it, and drives it over the Chrome DevTools Protocol. It never reads your real OpenForge data
 or `.minecraft` folder.
 
 ```bash
@@ -220,7 +225,7 @@ bridge to the main process.
 
 ## Roadmap
 
-- Microsoft sign-in inside Openforge, once an app registration is approved by Mojang. The plan is in
+- Microsoft sign-in inside OpenForge, once an app registration is approved by Mojang. The plan is in
   [docs/microsoft-auth-plan.md](docs/microsoft-auth-plan.md).
 - A code-signed release, so SmartScreen stops warning.
 
@@ -228,5 +233,5 @@ bridge to the main process.
 
 [MIT](LICENSE). Copyright (c) 2026 Noah Roe.
 
-Openforge is not an official Minecraft product and is not approved by or associated with Mojang
+OpenForge is not an official Minecraft product and is not approved by or associated with Mojang
 Studios or Microsoft.

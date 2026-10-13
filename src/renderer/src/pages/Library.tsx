@@ -298,7 +298,7 @@ export function Library({ onNew }: { onNew: () => void }): JSX.Element {
           <h2 style={{ fontSize: 24, marginBottom: 8 }}>Your library is empty</h2>
           <p style={{ maxWidth: 460, margin: '0 auto 22px' }}>
             Build an instance on any loader, or install a modpack from Modrinth or CurseForge.
-            Openforge fetches the Java each pack needs, so there is nothing to set up first.
+            OpenForge fetches the Java each pack needs, so there is nothing to set up first.
           </p>
           <div className="row" style={{ justifyContent: 'center', gap: 12 }}>
             <button className="btn primary" onClick={onNew}>

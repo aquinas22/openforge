@@ -8,7 +8,7 @@ portable_only=false
 
 usage() {
   printf '%s\n' \
-    'Build Openforge Windows artifacts from a Linux host.' \
+    'Build OpenForge Windows artifacts from a Linux host.' \
     '' \
     'Usage: scripts/build-windows-linux.sh [options]' \
     '' \
@@ -68,7 +68,7 @@ product_name="$(sed -n 's/^productName:[[:space:]]*//p' electron-builder.yml | h
 release_dir="${project_root}/release/${app_version}"
 wine_prefix="${project_root}/.build-tools/wine-prefix"
 
-printf '\nOpenforge Windows release builder\n'
+printf '\nOpenForge Windows release builder\n'
 printf 'Host:    %s\n' "$(uname -srm)"
 printf 'Node:    %s\n' "$(node --version)"
 printf 'Version: %s\n\n' "${app_version}"

@@ -497,6 +497,6 @@ export async function installPackFromFile(opts: {
     return installCurseForgeArchive({ ...opts, cleanupArchive: false })
   }
   throw new Error(
-    'That file is not a modpack. Openforge accepts Modrinth .mrpack files and CurseForge pack zips.'
+    'That file is not a modpack. OpenForge accepts Modrinth .mrpack files and CurseForge pack zips.'
   )
 }

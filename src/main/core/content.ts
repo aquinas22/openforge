@@ -650,7 +650,7 @@ export async function exportCurseForgePack(opts: {
     manifestVersion: 1,
     name: opts.instance.name,
     version: opts.instance.packVersion ?? '1.0.0',
-    author: 'Openforge',
+    author: 'OpenForge',
     files: cfEntries.map((entry) => ({
       projectID: Number(entry.projectId),
       fileID: Number(entry.versionId),

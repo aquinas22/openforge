@@ -74,9 +74,9 @@ function AccountModal({ onClose }: { onClose: () => void }): JSX.Element {
             <div>
               <strong>Offline play needs Minecraft on this PC</strong>
               <span>
-                {playStatus.offline.reason} Openforge only starts the game offline where Minecraft: Java Edition
+                {playStatus.offline.reason} OpenForge only starts the game offline where Minecraft: Java Edition
                 has been bought: open the official Minecraft Launcher and sign in once with the account that owns
-                it, then come back. Nothing is shared with Openforge except that an account exists.
+                it, then come back. Nothing is shared with OpenForge except that an account exists.
               </span>
               <div className="row" style={{ gap: 8, marginTop: 10 }}>
                 <button className="btn sm primary" onClick={() => openOfficialLauncher()}>
@@ -108,7 +108,7 @@ function AccountModal({ onClose }: { onClose: () => void }): JSX.Element {
             <UserRound size={17} />
             <div>
               <strong>Offline profile</strong>
-              <span>Openforge starts the game itself. Single-player, LAN, and servers with online mode off.</span>
+              <span>OpenForge starts the game itself. Single-player, LAN, and servers with online mode off.</span>
             </div>
           </div>
 
@@ -186,7 +186,7 @@ function AccountModal({ onClose }: { onClose: () => void }): JSX.Element {
             <div>
               <strong>Minecraft Launcher</strong>
               <span>
-                For online servers, Realms and your own skin. Openforge prepares the instance and hands it to the
+                For online servers, Realms and your own skin. OpenForge prepares the instance and hands it to the
                 official launcher, which signs you in with Microsoft.
               </span>
             </div>
@@ -197,7 +197,7 @@ function AccountModal({ onClose }: { onClose: () => void }): JSX.Element {
             </button>
             {launchMode === 'official' ? (
               <button className="btn sm ghost" onClick={() => saveSettings({ launchMode: 'direct' })}>
-                Play offline from Openforge instead
+                Play offline from OpenForge instead
               </button>
             ) : (
               <button className="btn sm ghost" onClick={() => saveSettings({ launchMode: 'official' })}>
@@ -206,7 +206,7 @@ function AccountModal({ onClose }: { onClose: () => void }): JSX.Element {
             )}
           </div>
           <div className="hint" style={{ marginTop: 8 }}>
-            Play currently {launchMode === 'official' ? 'hands off to the Minecraft Launcher' : 'starts the game offline from Openforge'}.
+            Play currently {launchMode === 'official' ? 'hands off to the Minecraft Launcher' : 'starts the game offline from OpenForge'}.
             You can change this any time in Settings.
           </div>
         </div>
@@ -263,7 +263,7 @@ function ShortcutsModal({ onClose }: { onClose: () => void }): JSX.Element {
 
 function BootSplash({ leaving }: { leaving: boolean }): JSX.Element {
   return (
-    <div className={`boot-splash${leaving ? ' leaving' : ''}`} role="status" aria-label="Openforge is starting">
+    <div className={`boot-splash${leaving ? ' leaving' : ''}`} role="status" aria-label="OpenForge is starting">
       <div className="boot-glow" />
       <div className="boot-brand">
         <div className="boot-mark">
@@ -271,7 +271,7 @@ function BootSplash({ leaving }: { leaving: boolean }): JSX.Element {
           <span className="boot-spark" />
         </div>
         <div className="eyebrow">Preparing your workshop</div>
-        <h1>Openforge</h1>
+        <h1>OpenForge</h1>
         <p>Heating the forge</p>
         <div className="boot-progress">
           <i />

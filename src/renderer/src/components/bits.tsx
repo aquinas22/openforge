@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import type { Instance, ThemeId } from '@shared/types'
 
-import logoUrl from '../assets/art/openforge-mark-512.png'
+import logoUrl from '../assets/art/openforge-icon-512.png'
 import artTerra from '../assets/art/forge-terra.webp'
 import artInfernum from '../assets/art/forge-infernum.webp'
 import artFinis from '../assets/art/forge-finis.webp'

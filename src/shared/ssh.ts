@@ -11,7 +11,7 @@ import type { SshServerConfig } from './types'
  *    smuggle in an ssh option (a host of "-oProxyCommand=..." is refused, and
  *    "--" ends option parsing before the host anyway).
  *  - Remotely, ssh hands one command string to the user's login shell. Every
- *    value Openforge interpolates into it (session name, unit, directory, log
+ *    value OpenForge interpolates into it (session name, unit, directory, log
  *    path, the console command being sent) is single-quoted for a POSIX shell.
  *    Commands the user typed into the override fields are theirs and run as
  *    written.
@@ -81,7 +81,7 @@ export interface SshOptions {
 
 /**
  * The argv for one ssh run. BatchMode makes ssh fail instead of prompting for
- * a password or passphrase (Openforge never stores passwords), and
+ * a password or passphrase (OpenForge never stores passwords), and
  * accept-new trusts a server on first contact but refuses a changed key.
  */
 export function buildSshArgs(target: SshTarget, remoteCommand: string, options: SshOptions = {}): string[] {
@@ -117,7 +117,10 @@ export interface RemoteCommands {
 /** The preset commands for tmux, screen, or systemd, before any overrides. */
 export function presetCommands(cfg: SshServerConfig): RemoteCommands {
   const session = shQuote(cfg.session || 'mc')
-  const dir = remotePath(cfg.serverDir || '~/server')
+  // The "=" prefix requires an exact tmux session name, so "mc" cannot
+  // accidentally target another server called "mc-survival".
+  const tmuxTarget = shQuote('=' + (cfg.session || 'mc'))
+  const dir = remotePath(cfg.serverDir || '~/minecraft-servers/server')
   const script = cfg.startScript?.trim() || './run.sh'
   const log = cfg.logPath?.trim() || 'logs/latest.log'
   const tailFile = log.startsWith('/') || log.startsWith('~')
@@ -148,10 +151,10 @@ export function presetCommands(cfg: SshServerConfig): RemoteCommands {
     default:
       return {
         start: `tmux new-session -d -s ${session} ${shQuote(`cd ${dir} && ${script}`)}`,
-        stop: `tmux send-keys -t ${session} stop Enter`,
-        status: `tmux has-session -t ${session}`,
+        stop: `tmux send-keys -t ${tmuxTarget} stop Enter`,
+        status: `tmux has-session -t ${tmuxTarget}`,
         // -l types the text literally, so key names in it are not interpreted.
-        send: (command) => `tmux send-keys -t ${session} -l -- ${shQuote(command)} && tmux send-keys -t ${session} Enter`,
+        send: (command) => `tmux send-keys -t ${tmuxTarget} -l -- ${shQuote(command)} && tmux send-keys -t ${tmuxTarget} Enter`,
         tail: tailFile
       }
   }

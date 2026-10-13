@@ -7,7 +7,7 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 
 /** Sent on every outbound request. Modrinth's API requires an identifying agent. */
-export const USER_AGENT = 'Openforge/2.1.0 (github.com/aquinas22/openforge)'
+export const USER_AGENT = 'OpenForge/2.2.0 (github.com/aquinas22/openforge)'
 
 export interface DownloadTask {
   url: string
@@ -25,6 +25,8 @@ export interface DownloadTask {
    * exists was complete and correct when written. Repair turns this off.
    */
   trustExisting?: boolean
+  /** Cancel a user-initiated deployment, including a streamed download. */
+  signal?: AbortSignal
 }
 
 /** An HTTP request that returned a non-2xx status. Carries the code so callers
@@ -189,6 +191,7 @@ async function verify(task: DownloadTask, path: string): Promise<void> {
  * valid -- the failure mode behind the most baffling modpack crashes.
  */
 export async function downloadFile(task: DownloadTask, attempts = 4): Promise<void> {
+  task.signal?.throwIfAborted()
   if (await isValid(task)) return
   await mkdir(dirname(task.dest), { recursive: true })
   const partial = `${task.dest}.part`
@@ -198,15 +201,17 @@ export async function downloadFile(task: DownloadTask, attempts = 4): Promise<vo
   for (const url of urls) {
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
-        const res = await request(url, { headers: task.headers, timeoutMs: 180_000 })
+        task.signal?.throwIfAborted()
+        const res = await request(url, { headers: task.headers, timeoutMs: 180_000, signal: task.signal ? AbortSignal.any([task.signal, AbortSignal.timeout(180_000)]) : undefined })
         if (!res.ok || !res.body) throw await httpError(res, url)
-        await pipeline(Readable.fromWeb(res.body as never), createWriteStream(partial))
+        await pipeline(Readable.fromWeb(res.body as never), createWriteStream(partial), { signal: task.signal })
         await verify(task, partial)
         await rename(partial, task.dest)
         return
       } catch (err) {
         lastErr = err
         await rm(partial, { force: true }).catch(() => undefined)
+        task.signal?.throwIfAborted()
         // A TLS interception error is a network problem no retry can fix, and a
         // 404/403 on a CDN file will never resolve itself.
         if (err instanceof TlsInterceptionError) throw err

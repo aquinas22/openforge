@@ -5,7 +5,7 @@ import { IPC } from '@shared/ipc'
 import { registerIpc } from './ipc'
 import { migrateLegacyUserData, removeLegacyAuthCredential } from './core/migrate'
 
-app.setName('Openforge')
+app.setName('OpenForge')
 
 // Development/demo only: OPENFORGE_USER_DATA points an unpackaged run at an
 // isolated data directory (used by scripts/screenshots.mjs so captures never
@@ -29,7 +29,7 @@ function createWindow(): void {
     show: false,
     frame: false,
     backgroundColor: '#191a1f',
-    title: 'Openforge',
+    title: 'OpenForge',
     icon: existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : undefined,
     webPreferences: {
       // electron-vite emits the preload as .mjs because package.json is type:module
@@ -69,8 +69,8 @@ app.whenReady().then(() => {
   // Must run before registerIpc(), which immediately reads settings/instances.
   // An isolated data directory must never adopt legacy data from the real one.
   if (!isolatedUserData) {
-    migrateLegacyUserData((msg) => console.log('[Openforge]', msg))
-    removeLegacyAuthCredential((msg) => console.log('[Openforge]', msg))
+    migrateLegacyUserData((msg) => console.log('[OpenForge]', msg))
+    removeLegacyAuthCredential((msg) => console.log('[OpenForge]', msg))
   }
   shutdownServers = registerIpc(() => mainWindow).shutdown
   createWindow()

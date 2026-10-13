@@ -35,6 +35,7 @@ import type {
 } from '@shared/types'
 import type { ServerConfigInput } from '@shared/ipc'
 import { presetCommands } from '@shared/ssh'
+import { RemoteServerSetup } from './RemoteServerSetup'
 
 const STATE_LABEL: Record<ServerStatus['state'], string> = {
   stopped: 'Stopped',
@@ -93,7 +94,7 @@ export function Servers(): JSX.Element {
         <div>
           <div className="eyebrow">Hosting</div>
           <h1 className="page-title">Servers</h1>
-          <p className="page-subtitle">Run a server on this PC, or control one over SSH.</p>
+          <p className="page-subtitle">Run a server on this PC, or set up and manage servers over SSH.</p>
         </div>
         <button className="btn primary" onClick={() => setEditing('new')}>
           <Plus size={15} /> Add server
@@ -104,7 +105,7 @@ export function Servers(): JSX.Element {
         <div className="empty search-empty">
           <ServerIcon size={28} />
           <h3>No servers yet</h3>
-          <p>Point Openforge at a server folder, create a fresh vanilla server, or add one you reach over SSH.</p>
+          <p>Point OpenForge at a server folder, create a fresh vanilla server, or add one you reach over SSH.</p>
           <button className="btn primary" style={{ marginTop: 14 }} onClick={() => setEditing('new')}>
             <Plus size={15} /> Add server
           </button>
@@ -191,9 +192,18 @@ function ServerDetail({
       if (line.serverId !== cfg.id) return
       setLines((prev) => (prev.length > 1500 ? [...prev.slice(-1200), line] : [...prev, line]))
     })
-    if (cfg.kind === 'ssh') api.refreshServer(cfg.id).catch(() => undefined)
+    let checking = false
+    const refresh = async (): Promise<void> => {
+      if (checking) return
+      checking = true
+      try { await api.refreshServer(cfg.id) }
+      catch { /* Connection failures arrive as server status events. */ }
+      finally { checking = false }
+    }
+    if (cfg.kind === 'ssh') void refresh()
+    const interval = cfg.kind === 'ssh' ? window.setInterval(refresh, 5000) : undefined
     if (cfg.kind === 'local') api.inspectServerFolder(cfg.dir).then(setFolder).catch(() => setFolder(null))
-    return off
+    return () => { off(); if (interval) window.clearInterval(interval) }
   }, [cfg])
 
   useEffect(() => {
@@ -238,6 +248,9 @@ function ServerDetail({
             {cfg.kind === 'local' ? <HardDrive size={12} /> : <Cloud size={12} />} {where(cfg)}
             {cfg.kind === 'ssh' ? ` · ${cfg.control === 'systemd' ? `systemd ${cfg.unit}` : `${cfg.control} ${cfg.session}`}` : ` · ${cfg.file}`}
           </small>
+          {cfg.kind === 'ssh' && cfg.deployment && (
+            <small className="muted">{cfg.deployment.source} · Minecraft {cfg.deployment.mcVersion} · {cfg.deployment.loader} · {(cfg.deployment.ramMb / 1024).toFixed(1)} GB · {cfg.host}:{cfg.deployment.gamePort}</small>
+          )}
         </div>
         <div className="row" style={{ gap: 6 }}>
           <button className="btn sm icon" title="Edit" aria-label="Edit server" onClick={onEdit} disabled={cfg.kind === 'local' && live}>
@@ -245,11 +258,11 @@ function ServerDetail({
           </button>
           <button
             className="btn sm icon"
-            title="Remove from Openforge (the folder is kept)"
+            title="Remove from OpenForge (the folder is kept)"
             aria-label="Remove server"
             disabled={cfg.kind === 'local' && live}
             onClick={() => {
-              if (confirm(`Remove ${cfg.name} from Openforge? Its files are not touched.`)) {
+              if (confirm(`Remove ${cfg.name} from OpenForge? Its files are not touched.`)) {
                 void run('delete', async () => {
                   await api.deleteServer(cfg.id)
                   onDeleted()
@@ -445,6 +458,7 @@ function ServerForm({
   const latest = useStore((s) => s.latest)
   const [kind, setKind] = useState<FormKind>(initial?.kind ?? 'local')
   const [saving, setSaving] = useState(false)
+  const [sshSetup, setSshSetup] = useState(!initial)
 
   const localInit = initial?.kind === 'local' ? initial : null
   const sshInit = initial?.kind === 'ssh' ? initial : null
@@ -466,14 +480,14 @@ function ServerForm({
 
   // SSH
   const [ssh, setSsh] = useState<Omit<SshServerConfig, 'id' | 'createdAt' | 'name' | 'kind'>>({
-    host: sshInit?.host ?? '',
+    host: sshInit?.host ?? 'server.noahroe.site',
     port: sshInit?.port ?? 22,
     user: sshInit?.user ?? '',
     identityFile: sshInit?.identityFile ?? '',
     control: sshInit?.control ?? 'tmux',
     session: sshInit?.session ?? 'mc',
     unit: sshInit?.unit ?? 'minecraft',
-    serverDir: sshInit?.serverDir ?? '~/server',
+    serverDir: sshInit?.serverDir ?? '~/minecraft-servers/server',
     startScript: sshInit?.startScript ?? './run.sh',
     logPath: sshInit?.logPath ?? '',
     startCommand: sshInit?.startCommand ?? '',
@@ -549,14 +563,14 @@ function ServerForm({
   const releases = versions.filter((v) => v.type === 'release').slice(0, 80)
 
   return (
-    <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="scrim" onMouseDown={(e) => !saving && e.target === e.currentTarget && onClose()}>
       <div className="modal server-form" role="dialog" aria-label={initial ? `Edit ${initial.name}` : 'Add a server'}>
         <div className="between" style={{ marginBottom: 16 }}>
           <div>
             <div className="eyebrow">{initial ? 'Edit server' : 'New server'}</div>
             <h2 style={{ fontSize: 20 }}>{initial ? initial.name : 'Add a server'}</h2>
           </div>
-          <button className="win-btn" onClick={onClose} aria-label="Close">
+          <button className="win-btn" disabled={saving} onClick={onClose} aria-label="Close">
             <X size={18} />
           </button>
         </div>
@@ -570,7 +584,7 @@ function ServerForm({
                 ['ssh', 'Over SSH']
               ] as [FormKind, string][]
             ).map(([key, label]) => (
-              <button key={key} role="tab" aria-selected={kind === key} className={kind === key ? 'active' : ''} onClick={() => setKind(key)}>
+              <button key={key} role="tab" disabled={saving} aria-selected={kind === key} className={kind === key ? 'active' : ''} onClick={() => setKind(key)}>
                 {label}
               </button>
             ))}
@@ -579,7 +593,7 @@ function ServerForm({
 
         <div className="field">
           <label htmlFor="srv-name">Name</label>
-          <input id="srv-name" className="input" value={name} maxLength={60} placeholder="Survival with friends" onChange={(e) => setName(e.target.value)} />
+          <input id="srv-name" className="input" disabled={saving} value={name} maxLength={60} placeholder="Survival with friends" onChange={(e) => setName(e.target.value)} />
         </div>
 
         {(kind === 'local' || kind === 'create') && (
@@ -645,7 +659,7 @@ function ServerForm({
             </div>
             <div className="hint">
               {launch === 'jar'
-                ? 'Openforge runs the jar with the Java and memory below.'
+                ? 'OpenForge runs the jar with the Java and memory below.'
                 : 'Forge and NeoForge servers start with run.bat; memory comes from user_jvm_args.txt. The Java below is put first on PATH.'}
             </div>
           </div>
@@ -693,10 +707,15 @@ function ServerForm({
 
         {kind === 'ssh' && (
           <>
+            {!initial && <div className="segmented" style={{ marginBottom: 16 }}>
+              <button disabled={saving} className={sshSetup ? 'active' : ''} onClick={() => setSshSetup(true)}>Set up a server</button>
+              <button disabled={saving} className={!sshSetup ? 'active' : ''} onClick={() => setSshSetup(false)}>Existing server</button>
+            </div>}
+            <fieldset disabled={saving} className="remote-setup-fields">
             <div className="row" style={{ gap: 12 }}>
               <div className="field" style={{ flex: 3 }}>
                 <label htmlFor="srv-host">Host</label>
-                <input id="srv-host" className="input" value={ssh.host} placeholder="mc.example.net" onChange={(e) => setS('host', e.target.value.trim())} />
+                <input id="srv-host" className="input" value={ssh.host} placeholder="server.noahroe.site" onChange={(e) => setS('host', e.target.value.trim())} />
               </div>
               <div className="field" style={{ flex: 1 }}>
                 <label htmlFor="srv-port">Port</label>
@@ -727,7 +746,7 @@ function ServerForm({
                   <KeyRound size={14} /> Browse
                 </button>
               </div>
-              <div className="hint">Key authentication only; Openforge never asks for or stores a password. A key with a passphrase should be loaded into ssh-agent.</div>
+              <div className="hint">Key authentication only; OpenForge never asks for or stores a password. A key with a passphrase should be loaded into ssh-agent.</div>
             </div>
             <div className="row" style={{ gap: 8, marginBottom: 16 }}>
               <button
@@ -754,6 +773,11 @@ function ServerForm({
               )}
             </div>
 
+            </fieldset>
+            {sshSetup && !initial ? (
+              <RemoteServerSetup target={ssh} name={name} onNameChange={setName} onSaved={onSaved} onBusyChange={setSaving} />
+            ) : (
+            <>
             <div className="field">
               <label>Runs in</label>
               <div className="segmented">
@@ -832,17 +856,19 @@ function ServerForm({
                 </div>
               )}
             </div>
+            </>
+            )}
           </>
         )}
 
         <div className="row" style={{ gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
-          <button className="btn ghost" onClick={onClose}>
+          <button className="btn ghost" disabled={saving} onClick={onClose}>
             Cancel
           </button>
-          <button className="btn primary" disabled={saving || (kind !== 'ssh' && !dir) || (kind === 'create' && !eula)} onClick={save}>
+          {!(kind === 'ssh' && sshSetup && !initial) && <button className="btn primary" disabled={saving || (kind !== 'ssh' && !dir) || (kind === 'create' && !eula)} onClick={save}>
             {saving ? <Loader2 size={15} className="spin" /> : null}
             {kind === 'create' ? 'Download and add' : initial ? 'Save' : 'Add server'}
-          </button>
+          </button>}
         </div>
       </div>
     </div>

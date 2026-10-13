@@ -26,7 +26,7 @@ export function TitleBar(): JSX.Element {
     <div className="titlebar">
       <div className="brand row">
         <Logo size={24} />
-        <span>Openforge</span>
+        <span>OpenForge</span>
         <small>Minecraft launcher</small>
       </div>
       <div className="spacer" />

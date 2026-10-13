@@ -4,7 +4,7 @@ import { join } from 'node:path'
 /**
  * Who may play offline.
  *
- * Openforge launches the game with an offline identity (username + UUID
+ * OpenForge launches the game with an offline identity (username + UUID
  * derived from it), which needs no Microsoft sign-in. A public launcher that
  * did that with no check at all would let anyone play without buying the game.
  * So offline launch is allowed only when this PC's official Minecraft Launcher

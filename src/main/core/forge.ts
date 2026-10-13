@@ -302,11 +302,11 @@ export async function installForgeLike(opts: {
     const stamp = await readStamp(stampPath)
     const fresh = stampIsFresh(stamp, key)
     if (fresh.fresh && (mode === 'quick' || (stamp && (await stampHashesMatch(stamp))))) {
-      onLog?.(`[Openforge] ${label} ${version} already installed - reusing the patched client.`)
+      onLog?.(`[OpenForge] ${label} ${version} already installed - reusing the patched client.`)
       report('loader', `${label} ready`, 1, 'Reusing the patched client from a previous install')
       return meta.versionId
     }
-    if (stamp) onLog?.(`[Openforge] ${label} install cache is stale (${fresh.reason ?? 'hash mismatch'}); re-running installer.`)
+    if (stamp) onLog?.(`[OpenForge] ${label} install cache is stale (${fresh.reason ?? 'hash mismatch'}); re-running installer.`)
   }
 
   // Parallel prefetch of everything the installer would download serially.
@@ -336,7 +336,7 @@ export async function installForgeLike(opts: {
   report('loader', `Installing ${label}`, -1, 'Patching Minecraft - this runs once per loader version')
   const started = Date.now()
   await runInstaller({ javaPath, jar, root: paths.root, label, report, onLog })
-  onLog?.(`[Openforge] ${label} installer finished in ${Math.round((Date.now() - started) / 1000)}s.`)
+  onLog?.(`[OpenForge] ${label} installer finished in ${Math.round((Date.now() - started) / 1000)}s.`)
 
   // Prefer the id declared by the installer; fall back to the newly created dir.
   let versionId: string | undefined

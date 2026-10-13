@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { lineSplitter } from './logparse'
 
 /**
@@ -28,25 +30,46 @@ export interface SshRun {
 }
 
 /** Run one ssh command to completion (or until `timeoutMs`). */
-export function runSsh(args: string[], timeoutMs: number): Promise<SshRun> {
+export function runSsh(args: string[], timeoutMs: number, options: {
+  input?: Readable
+  signal?: AbortSignal
+  onLine?: (stream: 'stdout' | 'stderr', line: string) => void
+} = {}): Promise<SshRun> {
   return new Promise((resolve) => {
+    if (options.signal?.aborted) {
+      resolve({ code: -1, stdout: '', stderr: 'Deployment cancelled.', timedOut: false })
+      return
+    }
     let stdout = ''
     let stderr = ''
     let timedOut = false
     let done = false
-    const child = spawn(sshExecutable(), args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(sshExecutable(), args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+    const out = lineSplitter((line) => options.onLine?.('stdout', line))
+    const err = lineSplitter((line) => options.onLine?.('stderr', line))
+    const cancel = (): void => { child.kill(); options.input?.destroy() }
+    options.signal?.addEventListener('abort', cancel, { once: true })
     const timer = setTimeout(() => {
       timedOut = true
-      child.kill()
+      cancel()
     }, timeoutMs)
     const finish = (code: number | null): void => {
       if (done) return
       done = true
       clearTimeout(timer)
+      options.signal?.removeEventListener('abort', cancel)
+      options.input?.destroy()
+      out.end()
+      err.end()
       resolve({ code, stdout: stdout.slice(-200_000), stderr: stderr.slice(-50_000), timedOut })
     }
-    child.stdout?.on('data', (d: Buffer) => (stdout += d.toString()))
-    child.stderr?.on('data', (d: Buffer) => (stderr += d.toString()))
+    child.stdout?.on('data', (d: Buffer) => { stdout = (stdout + d.toString()).slice(-200_000); out.push(d) })
+    child.stderr?.on('data', (d: Buffer) => { stderr = (stderr + d.toString()).slice(-50_000); err.push(d) })
+    if (options.input) {
+      void pipeline(options.input, child.stdin).catch((error: Error) => {
+        if (!done && error.message && !/EPIPE|premature close/i.test(error.message)) stderr += `\nUpload failed: ${error.message}`
+      })
+    } else child.stdin.end()
     child.on('error', (err) => {
       stderr += `${(err as NodeJS.ErrnoException).code ?? ''} ${err.message}`
       finish(-1)

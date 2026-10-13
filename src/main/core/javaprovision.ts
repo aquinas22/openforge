@@ -16,7 +16,7 @@ import type { Reporter } from './installer'
  * "Install Java yourself, then come back" is the single most common reason a
  * new player never gets a modpack running. Minecraft pins an exact major
  * version per release (8, 16, 17, 21, and 25 for the newest builds), and a pack
- * built for one will not start on another. Openforge fetches the right one on
+ * built for one will not start on another. OpenForge fetches the right one on
  * demand and keeps it beside the game files, so the game just starts.
  */
 

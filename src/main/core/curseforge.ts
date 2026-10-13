@@ -400,6 +400,7 @@ function normalizeVersion(raw: unknown, projectId?: string): ContentVersion | nu
     downloadUrl: f.downloadUrl || null,
     sha1,
     isServerPack: Boolean(f.isServerPack),
+    serverPackFileId: Number(f.serverPackFileId) > 0 ? String(f.serverPackFileId) : undefined,
     dependencies: ((f.dependencies ?? []) as { modId: number; relationType: number }[])
       // relationType 3 is CurseForge's "required dependency" relation.
       .filter((d) => d.relationType === 3)

@@ -127,7 +127,7 @@ export function InstanceDetail(): JSX.Element | null {
                   <div>
                     <strong>Update available — {inst.updateAvailable.versionNumber}</strong>
                     <span>
-                      Openforge replaces the pack&apos;s mods and configs and removes files the old
+                      OpenForge replaces the pack&apos;s mods and configs and removes files the old
                       release shipped. Your worlds, screenshots, and backups are never touched.
                     </span>
                   </div>

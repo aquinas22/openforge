@@ -223,7 +223,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): { shutdown: 
     if (instance?.javaPath) {
       const explicit = await probeJava(instance.javaPath)
       if (explicit) return explicit
-      logFor(instance.id, 'system', `[Openforge] Java override ${instance.javaPath} did not run; using automatic Java.`)
+      logFor(instance.id, 'system', `[OpenForge] Java override ${instance.javaPath} did not run; using automatic Java.`)
     }
     const cached = javaCache.get(requiredMajor)
     if (cached && existsSync(cached.path)) return cached
@@ -348,14 +348,14 @@ export function registerIpc(getWindow: () => BrowserWindow | null): { shutdown: 
         await installVersion(p, versionId, report, concurrency(), mode)
         inst.launchVersion = versionId
       }
-      logFor(inst.id, 'system', `[Openforge] Install finished in ${((Date.now() - started) / 1000).toFixed(1)}s.`)
+      logFor(inst.id, 'system', `[OpenForge] Install finished in ${((Date.now() - started) / 1000).toFixed(1)}s.`)
 
       // Provision the runtime now, so the first Play is instant rather than a
       // surprise 50 MB download.
       if (settings.autoJava) {
         const version = await resolveVersion(p, inst.launchVersion ?? inst.mcVersion)
         await resolveJava(version.javaVersion?.majorVersion ?? 8, inst, report).catch((err) =>
-          logFor(inst.id, 'system', `[Openforge] Java pre-fetch skipped: ${(err as Error).message}`)
+          logFor(inst.id, 'system', `[OpenForge] Java pre-fetch skipped: ${(err as Error).message}`)
         )
       }
 
@@ -500,7 +500,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): { shutdown: 
     } catch (err) {
       // The launcher must still open and run installed instances when Mojang is
       // unreachable. The connection check under Settings -> Content providers -> Advanced explains why.
-      console.warn('[Openforge] Version manifest unavailable:', (err as Error).message)
+      console.warn('[OpenForge] Version manifest unavailable:', (err as Error).message)
       return { latest: { release: '', snapshot: '' }, versions: [] }
     }
   })
@@ -631,7 +631,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): { shutdown: 
           report('launching', 'Syncing with Minecraft Launcher', -1)
           await registerOfficialProfile(p, { ...inst, ramMb: effectiveRam(inst) }, settings, versionId)
           await openOfficialLauncher()
-          report('done', 'Minecraft Launcher opened', 1, `Choose "Openforge - ${inst.name}" and press Play.`)
+          report('done', 'Minecraft Launcher opened', 1, `Choose "OpenForge - ${inst.name}" and press Play.`)
           return { ok: true }
         }
 
@@ -673,7 +673,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): { shutdown: 
         let version = await resolveVersion(p, versionId)
         const ready = await isVersionReady(p, version)
         if (!ready.fresh) {
-          logFor(id, 'system', `[Openforge] Refreshing game files (${ready.reason ?? 'not verified yet'}).`)
+          logFor(id, 'system', `[OpenForge] Refreshing game files (${ready.reason ?? 'not verified yet'}).`)
           version = await installVersion(p, versionId, reporterFor(id, 'files'), concurrency(), 'quick')
         }
         await ensureVersionJar(p, version)
@@ -681,12 +681,12 @@ export function registerIpc(getWindow: () => BrowserWindow | null): { shutdown: 
         logFor(
           id,
           'system',
-          `[Openforge] ${nativeCount} LWJGL native files ready for ${process.platform}/${process.arch}.`
+          `[OpenForge] ${nativeCount} LWJGL native files ready for ${process.platform}/${process.arch}.`
         )
 
         step('java', 'Finding Java')
         const java = await resolveJava(version.javaVersion?.majorVersion ?? 8, inst, reporterFor(id, 'java'))
-        logFor(id, 'system', `[Openforge] Using Java ${java.majorVersion} at ${java.path}`)
+        logFor(id, 'system', `[OpenForge] Using Java ${java.majorVersion} at ${java.path}`)
 
         step('account', `Playing as ${active.username}`)
         const account = await accounts.resolveForLaunch(active.id, settings.msClientId)
@@ -694,7 +694,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): { shutdown: 
           logFor(
             id,
             'system',
-            '[Openforge] Offline profile: online-mode servers will refuse this connection.'
+            '[OpenForge] Offline profile: online-mode servers will refuse this connection.'
           )
         }
 
@@ -764,7 +764,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): { shutdown: 
         logFor(
           id,
           'system',
-          `[Openforge] ${ready.fresh ? 'Warm launch' : 'Launch'} prepared in ${prepMs} ms, ` +
+          `[OpenForge] ${ready.fresh ? 'Warm launch' : 'Launch'} prepared in ${prepMs} ms, ` +
             `${(ramMb / 1024).toFixed(1)} GB heap, pid ${game.pid}.`
         )
         sendProgress({
@@ -1181,7 +1181,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): { shutdown: 
     delete inst.launchVersion
     delete inst.loaderPending
     persist()
-    logFor(id, 'system', `[Openforge] Profile moved to ${loaderLabelOf(loader)} ${mcVersion}${loaderVersion ? ` (${loaderVersion})` : ''}.`)
+    logFor(id, 'system', `[OpenForge] Profile moved to ${loaderLabelOf(loader)} ${mcVersion}${loaderVersion ? ` (${loaderVersion})` : ''}.`)
     return { instance: inst, ...outcome }
   })
 
@@ -1244,6 +1244,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): { shutdown: 
   const servers = registerServerIpc({
     getWindow,
     maxRamMb,
+    cfClient,
     resolveJava: async (major) => (await resolveJava(major, null).catch(() => null))?.path ?? null
   })
   return { shutdown: () => servers.shutdown() }

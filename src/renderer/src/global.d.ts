@@ -1,8 +1,8 @@
-import type { OpenforgeApi } from '@shared/ipc'
+import type { OpenForgeApi } from '@shared/ipc'
 
 declare global {
   interface Window {
-    openforge: OpenforgeApi
+    openforge: OpenForgeApi
   }
 }
 

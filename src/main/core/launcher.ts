@@ -10,8 +10,8 @@ import { Argument, VersionDetail } from './manifest'
 import { isAllowed, mavenToPath } from './rules'
 import { selectLibraries, versionJarFor } from './installer'
 
-const LAUNCHER_NAME = 'Openforge'
-const LAUNCHER_VERSION = '2.1.0'
+const LAUNCHER_NAME = 'OpenForge'
+const LAUNCHER_VERSION = '2.2.0'
 
 /** Jump straight into a world or server instead of the main menu. */
 export interface QuickPlay {
@@ -212,11 +212,11 @@ export async function launchGame(opts: LaunchOptions): Promise<RunningGame> {
   const finalArgs = [...jvmArgs, version.mainClass, ...gameArgs]
   const javaPath = opts.javaPath || settings.javaPath || 'java'
 
-  opts.onLog('stdout', `[Openforge] Launching ${version.id} with ${javaPath}`)
+  opts.onLog('stdout', `[OpenForge] Launching ${version.id} with ${javaPath}`)
   const safeArgs = finalArgs
     .filter((arg) => !arg.includes(classpath))
     .map((arg) => (arg === opts.account.accessToken && arg !== '0' ? '<access-token>' : arg))
-  opts.onLog('stdout', `[Openforge] ${javaPath} ${safeArgs.join(' ')}`)
+  opts.onLog('stdout', `[OpenForge] ${javaPath} ${safeArgs.join(' ')}`)
 
   const child: ChildProcess = spawn(javaPath, finalArgs, {
     cwd: opts.instanceDir,
@@ -242,7 +242,7 @@ export async function launchGame(opts: LaunchOptions): Promise<RunningGame> {
   child.stderr?.on('data', (d: Buffer) => rl(d, 'stderr'))
   child.on('close', (code) => opts.onExit(code))
   child.on('error', (err) => {
-    opts.onLog('stderr', `[Openforge] Failed to start Java: ${err.message}`)
+    opts.onLog('stderr', `[OpenForge] Failed to start Java: ${err.message}`)
     opts.onExit(-1)
   })
 
