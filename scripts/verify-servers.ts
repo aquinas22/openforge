@@ -27,7 +27,7 @@ function check(label: string, run: () => void): void { run(); assertions++; cons
 const hash = (data: Buffer, algorithm = 'sha1'): string => createHash(algorithm).update(data).digest('hex')
 const fixtures = new Map<string, Buffer>()
 const addJson = (url: string, value: unknown): void => { fixtures.set(url, Buffer.from(JSON.stringify(value))) }
-const target = { host: 'server.noahroe.site', port: 22, user: 'minecraft', identityFile: '' }
+const target = { host: 'mc.example.net', port: 22, user: 'minecraft', identityFile: '' }
 const baseInput: DeployRemoteServerInput = { requestId: 'test-request', target, name: 'Test server', slug: 'vanilla', source: 'vanilla', mcVersion: '1.20.1', ramMb: 2048, gamePort: 25565, acceptEula: true }
 
 // The shim runs the real SSH payload through Python with an isolated Path.home()

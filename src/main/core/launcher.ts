@@ -4,6 +4,7 @@ import { mkdir } from 'node:fs/promises'
 import { delimiter } from 'node:path'
 import type { LoaderType, Settings } from '@shared/types'
 import { tunedJvmArgs } from '../../shared/tuning'
+import { APP_VERSION } from '../../shared/version'
 import type { LaunchAccount } from './accounts'
 import { GamePaths } from './paths'
 import { Argument, VersionDetail } from './manifest'
@@ -11,7 +12,7 @@ import { isAllowed, mavenToPath } from './rules'
 import { selectLibraries, versionJarFor } from './installer'
 
 const LAUNCHER_NAME = 'OpenForge'
-const LAUNCHER_VERSION = '2.2.0'
+const LAUNCHER_VERSION = APP_VERSION
 
 /** Jump straight into a world or server instead of the main menu. */
 export interface QuickPlay {
