@@ -5,9 +5,10 @@ import { mkdir, readFile, rename, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
+import { APP_VERSION } from '../../shared/version'
 
 /** Sent on every outbound request. Modrinth's API requires an identifying agent. */
-export const USER_AGENT = 'OpenForge/2.2.0 (github.com/aquinas22/openforge)'
+export const USER_AGENT = `OpenForge/${APP_VERSION} (github.com/aquinas22/openforge)`
 
 export interface DownloadTask {
   url: string

@@ -3,6 +3,8 @@
  * remote Python standard library; no daemon, pip packages, scp, or sudo.
  * Keep this a string so Electron's packaged main process includes the agent.
  */
+import { USER_AGENT } from '../src/main/core/http'
+
 export const REMOTE_AGENT = String.raw`
 import concurrent.futures
 import fcntl
@@ -27,7 +29,7 @@ import zipfile
 
 PREFIX = "OPENFORGE:"
 ROOT = Path.home() / "minecraft-servers"
-USER_AGENT = "OpenForge/2.2.0 (github.com/aquinas22/openforge)"
+USER_AGENT = ${JSON.stringify(USER_AGENT)}
 MAX_ARCHIVE = 8 * 1024 ** 3
 child = None
 
