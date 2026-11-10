@@ -4,8 +4,8 @@ This directory contains the deployment backend used by OpenForge's Servers
 page. It provisions dedicated Minecraft servers over key-authenticated OpenSSH,
 under the remote user's ~/minecraft-servers/<slug> directory.
 
-In the app, choose **Servers → Add server → Over SSH → Set up a server**.
-Enter the host (for example server.noahroe.site), SSH username, and optionally
+In the app, choose **Servers → Add server → Over SSH → Set up a new server**.
+Enter the host (for example mc.example.net), SSH username, and optionally
 a private key file. An empty key field uses ssh-agent and OpenSSH's default
 keys. Passphrase-protected keys should be loaded with ssh-add first.
 
@@ -21,9 +21,9 @@ Minecraft EULA and press **Set up server**. After installation, use **Start**,
 app also refreshes its status every five seconds. Allow the selected Minecraft
 port through the host's firewall if players need to connect from outside.
 
-**Scan host** lists folders already in ~/minecraft-servers. Servers created
+**Check host** lists folders already in ~/minecraft-servers. Servers created
 by OpenForge can be added back using their saved metadata. For other server
-folders, choose **Existing server** and configure its start script and control
+folders, choose **Connect an existing one** and configure its start script and control
 method. Removing an entry from the app preserves all remote files.
 
 ## Sources
@@ -77,7 +77,7 @@ after Java and the loader are ready. Existing server directories are never
 overwritten. Failures and ordinary cancellation remove staging files; an
 unrecoverable connection loss or host shutdown can leave a hidden staging
 directory, which is excluded from the server list. A successfully published
-server can always be recovered with **Scan host**, even if the desktop app
+server can always be recovered with **Check host**, even if the desktop app
 disconnects before saving its configuration.
 
 Run npm run verify:servers for isolated tests of the actual planner, SSH

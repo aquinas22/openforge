@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CircleStop,
   Cloud,
+  Copy,
   FolderOpen,
   HardDrive,
   KeyRound,
@@ -22,9 +23,10 @@ import {
 } from 'lucide-react'
 import { api } from '../api'
 import { useStore } from '../store/store'
-import { cleanError } from '../util'
+import { cleanError, loaderLabel } from '../util'
 import type {
   LocalServerConfig,
+  RemoteServerDeployment,
   ServerConfig,
   ServerFolderInfo,
   ServerLogLine,
@@ -248,9 +250,7 @@ function ServerDetail({
             {cfg.kind === 'local' ? <HardDrive size={12} /> : <Cloud size={12} />} {where(cfg)}
             {cfg.kind === 'ssh' ? ` · ${cfg.control === 'systemd' ? `systemd ${cfg.unit}` : `${cfg.control} ${cfg.session}`}` : ` · ${cfg.file}`}
           </small>
-          {cfg.kind === 'ssh' && cfg.deployment && (
-            <small className="muted">{cfg.deployment.source} · Minecraft {cfg.deployment.mcVersion} · {cfg.deployment.loader} · {(cfg.deployment.ramMb / 1024).toFixed(1)} GB · {cfg.host}:{cfg.deployment.gamePort}</small>
-          )}
+          {cfg.kind === 'ssh' && cfg.deployment && <DeploymentSummary cfg={cfg} deployment={cfg.deployment} />}
         </div>
         <div className="row" style={{ gap: 6 }}>
           <button className="btn sm icon" title="Edit" aria-label="Edit server" onClick={onEdit} disabled={cfg.kind === 'local' && live}>
@@ -438,6 +438,43 @@ function ServerDetail({
   )
 }
 
+const SOURCE_LABEL: Record<RemoteServerDeployment['source'], string> = {
+  vanilla: 'Vanilla',
+  modrinth: 'Modrinth pack',
+  curseforge: 'CurseForge pack'
+}
+
+/** What OpenForge installed on the host, and the address players join with. */
+function DeploymentSummary({ cfg, deployment }: { cfg: SshServerConfig; deployment: RemoteServerDeployment }): JSX.Element {
+  const toast = useStore((s) => s.toast)
+  const address = deployment.gamePort === 25565 ? cfg.host : `${cfg.host}:${deployment.gamePort}`
+  const gb = deployment.ramMb / 1024
+  return (
+    <div className="server-deployment">
+      <span className="chip">{SOURCE_LABEL[deployment.source]}</span>
+      <span className="chip">Minecraft {deployment.mcVersion}</span>
+      {deployment.loader !== 'vanilla' && (
+        <span className="chip">
+          {loaderLabel(deployment.loader)} {deployment.loaderVersion}
+        </span>
+      )}
+      <span className="chip">{Number.isInteger(gb) ? gb : gb.toFixed(1)} GB</span>
+      <button
+        className="server-address"
+        title="Copy the address players join with"
+        onClick={() =>
+          navigator.clipboard
+            .writeText(address)
+            .then(() => toast(`Copied ${address}`, 'success'))
+            .catch(() => toast('Could not copy to the clipboard.', 'error'))
+        }
+      >
+        {address} <Copy size={12} />
+      </button>
+    </div>
+  )
+}
+
 // -- Add / edit ----------------------------------------------------------------------------
 
 type FormKind = 'local' | 'create' | 'ssh'
@@ -480,7 +517,7 @@ function ServerForm({
 
   // SSH
   const [ssh, setSsh] = useState<Omit<SshServerConfig, 'id' | 'createdAt' | 'name' | 'kind'>>({
-    host: sshInit?.host ?? 'server.noahroe.site',
+    host: sshInit?.host ?? '',
     port: sshInit?.port ?? 22,
     user: sshInit?.user ?? '',
     identityFile: sshInit?.identityFile ?? '',
@@ -559,6 +596,7 @@ function ServerForm({
     }
   }
 
+  const settingUp = kind === 'ssh' && sshSetup && !initial
   const maxRam = systemInfo?.maxRamMb ?? 8192
   const releases = versions.filter((v) => v.type === 'release').slice(0, 80)
 
@@ -707,169 +745,178 @@ function ServerForm({
 
         {kind === 'ssh' && (
           <>
-            {!initial && <div className="segmented" style={{ marginBottom: 16 }}>
-              <button disabled={saving} className={sshSetup ? 'active' : ''} onClick={() => setSshSetup(true)}>Set up a server</button>
-              <button disabled={saving} className={!sshSetup ? 'active' : ''} onClick={() => setSshSetup(false)}>Existing server</button>
-            </div>}
-            <fieldset disabled={saving} className="remote-setup-fields">
-            <div className="row" style={{ gap: 12 }}>
-              <div className="field" style={{ flex: 3 }}>
-                <label htmlFor="srv-host">Host</label>
-                <input id="srv-host" className="input" value={ssh.host} placeholder="server.noahroe.site" onChange={(e) => setS('host', e.target.value.trim())} />
-              </div>
-              <div className="field" style={{ flex: 1 }}>
-                <label htmlFor="srv-port">Port</label>
-                <input id="srv-port" className="input" type="number" min={1} max={65535} value={ssh.port} onChange={(e) => setS('port', Number(e.target.value))} />
-              </div>
-              <div className="field" style={{ flex: 2 }}>
-                <label htmlFor="srv-user">User</label>
-                <input id="srv-user" className="input" value={ssh.user} placeholder="minecraft" onChange={(e) => setS('user', e.target.value.trim())} />
-              </div>
-            </div>
-            <div className="field">
-              <label htmlFor="srv-key">Private key</label>
-              <div className="input-row">
-                <input
-                  id="srv-key"
-                  className="input"
-                  value={ssh.identityFile}
-                  placeholder="Empty: use ssh-agent and your default keys"
-                  onChange={(e) => setS('identityFile', e.target.value.trim())}
-                />
-                <button
-                  className="btn"
-                  onClick={async () => {
-                    const picked = await api.pickFile([{ name: 'Private key', extensions: ['*'] }])
-                    if (picked) setS('identityFile', picked)
-                  }}
-                >
-                  <KeyRound size={14} /> Browse
+            {!initial && (
+              <div className="segmented" role="tablist" aria-label="SSH server" style={{ marginBottom: 16 }}>
+                <button role="tab" aria-selected={sshSetup} disabled={saving} className={sshSetup ? 'active' : ''} onClick={() => setSshSetup(true)}>
+                  Set up a new server
+                </button>
+                <button role="tab" aria-selected={!sshSetup} disabled={saving} className={!sshSetup ? 'active' : ''} onClick={() => setSshSetup(false)}>
+                  Connect an existing one
                 </button>
               </div>
-              <div className="hint">Key authentication only; OpenForge never asks for or stores a password. A key with a passphrase should be loaded into ssh-agent.</div>
-            </div>
-            <div className="row" style={{ gap: 8, marginBottom: 16 }}>
-              <button
-                className="btn"
-                disabled={testing || !ssh.host || !ssh.user}
-                onClick={async () => {
-                  setTesting(true)
-                  setTest(null)
-                  try {
-                    setTest(await api.testSshConnection(ssh))
-                  } catch (e) {
-                    setTest({ ok: false, kind: 'other', message: cleanError(e) })
-                  } finally {
-                    setTesting(false)
-                  }
-                }}
-              >
-                {testing ? <Loader2 size={14} className="spin" /> : <Wifi size={14} />} Test connection
-              </button>
-              {test && (
-                <span className={`test-result ${test.ok ? 'ok' : 'bad'}`} role="status">
-                  {test.ok ? '' : <TriangleAlert size={13} />} {test.message}
-                </span>
-              )}
-            </div>
-
-            </fieldset>
-            {sshSetup && !initial ? (
-              <RemoteServerSetup target={ssh} name={name} onNameChange={setName} onSaved={onSaved} onBusyChange={setSaving} />
-            ) : (
-            <>
-            <div className="field">
-              <label>Runs in</label>
-              <div className="segmented">
-                {(['tmux', 'screen', 'systemd'] as SshControl[]).map((c) => (
-                  <button key={c} className={ssh.control === c ? 'active' : ''} onClick={() => setS('control', c)}>
-                    {c}
+            )}
+            <fieldset disabled={saving} className="remote-setup-fields">
+              <div className="row" style={{ gap: 12 }}>
+                <div className="field" style={{ flex: 3 }}>
+                  <label htmlFor="srv-host">Host</label>
+                  <input id="srv-host" className="input" value={ssh.host} placeholder="mc.example.net" onChange={(e) => setS('host', e.target.value.trim())} />
+                </div>
+                <div className="field" style={{ flex: 1 }}>
+                  <label htmlFor="srv-port">Port</label>
+                  <input id="srv-port" className="input" type="number" min={1} max={65535} value={ssh.port} onChange={(e) => setS('port', Number(e.target.value))} />
+                </div>
+                <div className="field" style={{ flex: 2 }}>
+                  <label htmlFor="srv-user">User</label>
+                  <input id="srv-user" className="input" value={ssh.user} placeholder="minecraft" onChange={(e) => setS('user', e.target.value.trim())} />
+                </div>
+              </div>
+              <div className="field">
+                <label htmlFor="srv-key">Private key</label>
+                <div className="input-row">
+                  <input
+                    id="srv-key"
+                    className="input"
+                    value={ssh.identityFile}
+                    placeholder="Empty: use ssh-agent and your default keys"
+                    onChange={(e) => setS('identityFile', e.target.value.trim())}
+                  />
+                  <button
+                    className="btn"
+                    onClick={async () => {
+                      const picked = await api.pickFile([{ name: 'Private key', extensions: ['*'] }])
+                      if (picked) setS('identityFile', picked)
+                    }}
+                  >
+                    <KeyRound size={14} /> Browse
                   </button>
-                ))}
-              </div>
-            </div>
-            <div className="row" style={{ gap: 12 }}>
-              {ssh.control === 'systemd' ? (
-                <div className="field" style={{ flex: 1 }}>
-                  <label htmlFor="srv-unit">Unit</label>
-                  <input id="srv-unit" className="input" value={ssh.unit} onChange={(e) => setS('unit', e.target.value)} />
                 </div>
-              ) : (
-                <div className="field" style={{ flex: 1 }}>
-                  <label htmlFor="srv-session">Session name</label>
-                  <input id="srv-session" className="input" value={ssh.session} onChange={(e) => setS('session', e.target.value)} />
+                <div className="hint">Key authentication only; OpenForge never asks for or stores a password. A key with a passphrase should be loaded into ssh-agent.</div>
+              </div>
+              {!settingUp && (
+                <div className="row" style={{ gap: 8, marginBottom: 16 }}>
+                  <button
+                    className="btn"
+                    disabled={testing || !ssh.host || !ssh.user}
+                    onClick={async () => {
+                      setTesting(true)
+                      setTest(null)
+                      try {
+                        setTest(await api.testSshConnection(ssh))
+                      } catch (e) {
+                        setTest({ ok: false, kind: 'other', message: cleanError(e) })
+                      } finally {
+                        setTesting(false)
+                      }
+                    }}
+                  >
+                    {testing ? <Loader2 size={14} className="spin" /> : <Wifi size={14} />} Test connection
+                  </button>
+                  {test && (
+                    <span className={`test-result ${test.ok ? 'ok' : 'bad'}`} role="status">
+                      {test.ok ? '' : <TriangleAlert size={13} />} {test.message}
+                    </span>
+                  )}
                 </div>
               )}
-              <div className="field" style={{ flex: 2 }}>
-                <label htmlFor="srv-rdir">Server folder</label>
-                <input id="srv-rdir" className="input" value={ssh.serverDir} onChange={(e) => setS('serverDir', e.target.value)} />
-              </div>
-            </div>
-            <div className="row" style={{ gap: 12 }}>
-              {ssh.control !== 'systemd' && (
-                <div className="field" style={{ flex: 1 }}>
-                  <label htmlFor="srv-script">Start script</label>
-                  <input id="srv-script" className="input" value={ssh.startScript} onChange={(e) => setS('startScript', e.target.value)} />
+            </fieldset>
+            {settingUp ? (
+              <RemoteServerSetup target={ssh} name={name} onNameChange={setName} onSaved={onSaved} onBusyChange={setSaving} onClose={onClose} />
+            ) : (
+              <>
+                <div className="field">
+                  <label>Runs in</label>
+                  <div className="segmented">
+                    {(['tmux', 'screen', 'systemd'] as SshControl[]).map((c) => (
+                      <button key={c} className={ssh.control === c ? 'active' : ''} onClick={() => setS('control', c)}>
+                        {c}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              )}
-              <div className="field" style={{ flex: 1 }}>
-                <label htmlFor="srv-log">Log file</label>
-                <input
-                  id="srv-log"
-                  className="input"
-                  value={ssh.logPath}
-                  placeholder={ssh.control === 'systemd' ? 'Empty: journalctl' : 'logs/latest.log'}
-                  onChange={(e) => setS('logPath', e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className={`advanced${showCommands ? ' open' : ''}`}>
-              <button className="advanced-toggle" aria-expanded={showCommands} onClick={() => setShowCommands((o) => !o)}>
-                <Pencil size={14} className="advanced-chevron" />
-                <span>
-                  <strong>Commands</strong>
-                  <small>Leave empty to use the {ssh.control} defaults shown. Your own commands run exactly as written.</small>
-                </span>
-              </button>
-              {showCommands && preview && (
-                <div className="advanced-body">
-                  {(
-                    [
-                      ['startCommand', 'Start', preview.start],
-                      ['stopCommand', 'Stop', preview.stop],
-                      ['statusCommand', 'Status (exit 0 = running)', preview.status],
-                      ['sendCommand', 'Send a console command ({cmd} = the command, quoted)', preview.send],
-                      ['tailCommand', 'Stream the log', preview.tail]
-                    ] as [keyof typeof ssh, string, string][]
-                  ).map(([key, label, placeholder]) => (
-                    <div className="field" key={key}>
-                      <label>{label}</label>
-                      <input
-                        className="input mono"
-                        value={String(ssh[key])}
-                        placeholder={placeholder}
-                        onChange={(e) => setS(key, e.target.value as never)}
-                      />
+                <div className="row" style={{ gap: 12 }}>
+                  {ssh.control === 'systemd' ? (
+                    <div className="field" style={{ flex: 1 }}>
+                      <label htmlFor="srv-unit">Unit</label>
+                      <input id="srv-unit" className="input" value={ssh.unit} onChange={(e) => setS('unit', e.target.value)} />
                     </div>
-                  ))}
+                  ) : (
+                    <div className="field" style={{ flex: 1 }}>
+                      <label htmlFor="srv-session">Session name</label>
+                      <input id="srv-session" className="input" value={ssh.session} onChange={(e) => setS('session', e.target.value)} />
+                    </div>
+                  )}
+                  <div className="field" style={{ flex: 2 }}>
+                    <label htmlFor="srv-rdir">Server folder</label>
+                    <input id="srv-rdir" className="input" value={ssh.serverDir} onChange={(e) => setS('serverDir', e.target.value)} />
+                  </div>
                 </div>
-              )}
-            </div>
-            </>
+                <div className="row" style={{ gap: 12 }}>
+                  {ssh.control !== 'systemd' && (
+                    <div className="field" style={{ flex: 1 }}>
+                      <label htmlFor="srv-script">Start script</label>
+                      <input id="srv-script" className="input" value={ssh.startScript} onChange={(e) => setS('startScript', e.target.value)} />
+                    </div>
+                  )}
+                  <div className="field" style={{ flex: 1 }}>
+                    <label htmlFor="srv-log">Log file</label>
+                    <input
+                      id="srv-log"
+                      className="input"
+                      value={ssh.logPath}
+                      placeholder={ssh.control === 'systemd' ? 'Empty: journalctl' : 'logs/latest.log'}
+                      onChange={(e) => setS('logPath', e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className={`advanced${showCommands ? ' open' : ''}`}>
+                  <button className="advanced-toggle" aria-expanded={showCommands} onClick={() => setShowCommands((o) => !o)}>
+                    <Pencil size={14} className="advanced-chevron" />
+                    <span>
+                      <strong>Commands</strong>
+                      <small>Leave empty to use the {ssh.control} defaults shown. Your own commands run exactly as written.</small>
+                    </span>
+                  </button>
+                  {showCommands && preview && (
+                    <div className="advanced-body">
+                      {(
+                        [
+                          ['startCommand', 'Start', preview.start],
+                          ['stopCommand', 'Stop', preview.stop],
+                          ['statusCommand', 'Status (exit 0 = running)', preview.status],
+                          ['sendCommand', 'Send a console command ({cmd} = the command, quoted)', preview.send],
+                          ['tailCommand', 'Stream the log', preview.tail]
+                        ] as [keyof typeof ssh, string, string][]
+                      ).map(([key, label, placeholder]) => (
+                        <div className="field" key={key}>
+                          <label>{label}</label>
+                          <input
+                            className="input mono"
+                            value={String(ssh[key])}
+                            placeholder={placeholder}
+                            onChange={(e) => setS(key, e.target.value as never)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </>
         )}
 
-        <div className="row" style={{ gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
-          <button className="btn ghost" disabled={saving} onClick={onClose}>
-            Cancel
-          </button>
-          {!(kind === 'ssh' && sshSetup && !initial) && <button className="btn primary" disabled={saving || (kind !== 'ssh' && !dir) || (kind === 'create' && !eula)} onClick={save}>
-            {saving ? <Loader2 size={15} className="spin" /> : null}
-            {kind === 'create' ? 'Download and add' : initial ? 'Save' : 'Add server'}
-          </button>}
-        </div>
+        {!settingUp && (
+          <div className="row" style={{ gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+            <button className="btn ghost" disabled={saving} onClick={onClose}>
+              Cancel
+            </button>
+            <button className="btn primary" disabled={saving || (kind !== 'ssh' && !dir) || (kind === 'create' && !eula)} onClick={save}>
+              {saving ? <Loader2 size={15} className="spin" /> : null}
+              {kind === 'create' ? 'Download and add' : initial ? 'Save' : 'Add server'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

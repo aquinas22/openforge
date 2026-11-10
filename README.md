@@ -131,7 +131,7 @@ The **Servers** page manages servers you run yourself.
 - **Automatic SSH setup:** choose vanilla, a Modrinth pack, or a linked CurseForge server pack.
   OpenForge creates a folder under ~/minecraft-servers, extracts server files, downloads dependencies,
   installs the matching Java and mod loader, and adds start/stop/console controls. The host needs
-  Python 3.9+ and tmux. **Scan host** reconnects to previously deployed servers. See the
+  Python 3.9+ and tmux. **Check host** finds servers it set up before so you can add them back. See the
   [server backend guide](servers/README.md) for requirements and API details.
 
 ## FAQ

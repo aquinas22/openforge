@@ -317,53 +317,6 @@ button {
   object-fit: contain;
   filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.26));
 }
-.remote-setup-fields {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-.remote-host-info,
-.remote-deploy-progress {
-  padding: 12px;
-  margin-bottom: 16px;
-  background: var(--stone);
-  border: 1px solid var(--lode);
-  border-radius: 8px;
-  font-size: 12px;
-}
-.remote-host-info .between {
-  gap: 12px;
-  margin-top: 8px;
-}
-.remote-deploy-progress {
-  max-height: 160px;
-  overflow: auto;
-  font-family: var(--font-mono);
-}
-.remote-deploy-progress p {
-  margin: 3px 0;
-}
-.remote-deploy-progress .error {
-  color: var(--danger);
-}
-.remote-pack-results {
-  display: grid;
-  gap: 6px;
-  max-height: 210px;
-  overflow: auto;
-  margin-bottom: 16px;
-}
-.remote-pack-result {
-  flex-direction: column;
-  align-items: flex-start;
-  text-align: left;
-  white-space: normal;
-}
-.remote-pack-result small {
-  color: var(--muted);
-  font-weight: 400;
-}
 .titlebar .brand small {
   color: var(--muted);
   font-family: var(--font-mono);
@@ -3870,6 +3823,217 @@ kbd {
 }
 .test-result.bad {
   color: var(--danger);
+}
+
+/* -- SSH server setup ----------------------------------------------------- */
+.remote-setup-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.remote-setup .hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.remote-setup .hint.danger {
+  color: var(--danger);
+}
+.remote-setup .hint code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--dim);
+}
+.remote-setup .input[aria-invalid='true'] {
+  box-shadow: inset 0 0 0 2px var(--danger);
+}
+.remote-host-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.remote-host-check .btn {
+  flex-shrink: 0;
+}
+.remote-host-info,
+.remote-deploy {
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  background: var(--stone);
+  box-shadow: inset 0 0 0 2px var(--lode);
+}
+.remote-host-info .hint {
+  margin: 8px 0 0;
+}
+.remote-host-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.remote-host-facts li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dim);
+}
+.remote-host-facts li.ok > svg {
+  color: var(--vein);
+}
+.remote-host-facts li.warn,
+.remote-host-facts li.warn > svg {
+  color: var(--gold);
+}
+.remote-host-facts li.bad,
+.remote-host-facts li.bad > svg {
+  color: var(--danger);
+}
+.remote-host-servers {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 2px solid var(--lode);
+}
+.remote-host-servers .eyebrow {
+  margin: 0;
+}
+.remote-host-servers .between {
+  gap: 12px;
+}
+.remote-host-server {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+.remote-host-server small {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.remote-pack-results {
+  display: grid;
+  gap: 4px;
+  max-height: 252px;
+  overflow: auto;
+  margin-top: 8px;
+}
+.remote-pack-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  color: var(--text);
+  background: var(--bedrock);
+  box-shadow: inset 0 0 0 2px transparent;
+  transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+button.remote-pack-result:hover {
+  background: var(--slab);
+  box-shadow: inset 0 0 0 2px var(--lode);
+}
+.remote-pack-result.active {
+  background: var(--slab);
+  box-shadow: inset 0 0 0 2px var(--vein);
+}
+.remote-pack-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: grid;
+  place-items: center;
+  object-fit: cover;
+  color: var(--muted);
+  background: var(--stone);
+  image-rendering: auto;
+}
+.remote-pack-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.remote-pack-copy strong {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remote-pack-copy small {
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remote-pack-downloads {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 11.5px;
+}
+.remote-deploy .launch-steps li {
+  font-size: 11.5px;
+}
+.remote-deploy .launch-steps li.failed {
+  color: var(--danger);
+}
+.remote-deploy .launch-steps li.failed i {
+  color: var(--bedrock);
+  background: var(--danger);
+  box-shadow: none;
+}
+.remote-deploy-message {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.server-deployment {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.server-address {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text);
+  background: var(--bedrock);
+  box-shadow: inset 0 0 0 2px var(--lode);
+}
+.server-address:hover {
+  box-shadow: inset 0 0 0 2px var(--vein);
+}
+[data-ui-style='modern'] .remote-host-info,
+[data-ui-style='modern'] .remote-deploy,
+[data-ui-style='modern'] .remote-pack-result,
+[data-ui-style='modern'] .remote-pack-icon,
+[data-ui-style='modern'] .server-address {
+  border-radius: 8px;
 }
 [data-ui-style='modern'] .server-console,
 [data-ui-style='modern'] .server-stats > div {
