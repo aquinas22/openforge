@@ -291,8 +291,9 @@ export function registerServerIpc(deps: Deps): { shutdown: () => Promise<void> }
       })
       return addRemote(cfg)
     } catch (error) {
-      send(IPC.serverDeploymentEvent, { requestId: input.requestId, phase: 'error', message: controller.signal.aborted ? 'Deployment cancelled.' : (error as Error).message })
-      throw error
+      const failure = controller.signal.aborted ? new Error('Deployment cancelled.') : (error as Error)
+      send(IPC.serverDeploymentEvent, { requestId: input.requestId, phase: 'error', message: failure.message })
+      throw failure
     } finally {
       deployments.delete(input.requestId)
     }
